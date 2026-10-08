@@ -2,6 +2,7 @@
 # Read with `sh scripts/workflow.sh get <dotted.key> [default]`. Values stay on one line.
 
 [git]
+host            = "github"
 default_branch  = "main"
 branch_template = "{type}/{ticket}-{slug}"
 default_type    = "feature"
@@ -16,9 +17,25 @@ bump            = 'printf "%s\n" {version} > VERSION'    # sets it; {version} is
 
 [board]
 kind      = "github"          # github | gitlab: titles come from `forge issue view`; else pass TITLE=
+cli       = "gh"
 url       = "https://github.com/bifenbecker/forge-cli"
 project   = "#"
 issue_uri = "/issues/{ticket}"
+
+[board.labels]
+blocked     = "Cannot proceed until something outside the ticket changes"
+needs-info  = "Cannot proceed until a question is answered"
+spike       = "Time-boxed investigation whose result is an answer, not a change"
+docs        = "Changes documentation rather than behaviour"
+performance = "Aimed at speed or resource use rather than behaviour"
+
+[board.size]
+# T-shirt size: one label per ticket, mirrored in Story Points where the type has the field
+XS = 1   # a few hours
+S  = 2   # up to a day
+M  = 3   # one to two days
+L  = 5   # two to three days; the most one request carries
+XL = 8   # too big for one request; split before starting
 
 [tools]
 required = ["git>=2.38", "just", "jq", "claude", "gh", "shellcheck", "git-cliff", "prek"]
