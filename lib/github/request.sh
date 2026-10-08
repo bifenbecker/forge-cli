@@ -341,12 +341,16 @@ github_request_comment_add() {
 }
 
 github_request_comment_edit() {
-    # Conversation comments and review comments live under different endpoints.
-    if gh_comment=$(github_api "$FORGE_API/issues/comments/$2" -X PATCH -f "body=$FORGE_BODY" 2>/dev/null); then
-        :
-    else
+    # Conversation comments and review comments live under different endpoints. Only "not found"
+    # on the first means try the second; a 403 there must not turn into a 404 from the other.
+    gh_edit_status=0
+    gh_comment=$(forge_capture_optional github_api "$FORGE_API/issues/comments/$2" -X PATCH \
+        -f "body=$FORGE_BODY") || gh_edit_status=$?
+    if [ "$gh_edit_status" = "$FORGE_EXIT_NOT_FOUND" ]; then
         gh_comment=$(forge_capture github_api "$FORGE_API/pulls/comments/$2" -X PATCH -f "body=$FORGE_BODY") ||
             return $?
+    elif [ "$gh_edit_status" != 0 ]; then
+        return "$gh_edit_status"
     fi
     printf '%s\n' "$gh_comment" | _jq "$GH_REQUEST_DEF gh_comment"
 }

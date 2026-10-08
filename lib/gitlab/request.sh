@@ -91,7 +91,7 @@ gitlab_request_view() {
     fi
     gl_mr=$(forge_capture gitlab_api "$FORGE_API/merge_requests/$1") || return $?
     # approval_state and approval_rules need Premium; /approvals works everywhere.
-    gl_approvals=$(gitlab_api "$FORGE_API/merge_requests/$1/approvals" 2>/dev/null) || gl_approvals='{}'
+    gl_approvals=$(forge_capture gitlab_api "$FORGE_API/merge_requests/$1/approvals") || return $?
     forge_emit_doc "$gl_mr" "$GL_REQUEST_DEF gl_request + {
         approved: (\$approvals.approved // false),
         approved_by: [(\$approvals.approved_by // [])[].user.username],

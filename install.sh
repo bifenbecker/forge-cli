@@ -114,7 +114,7 @@ work=$(mktemp -d 2>/dev/null) || die "cannot create a temporary directory"
 trap 'rm -rf "$work"' EXIT
 
 if [ -n "$from" ]; then
-    [ -f "$from/bin/forge" ] || die "$from is not a forge checkout"
+    [ -f "$from/bin/forge" ] && [ -f "$from/VERSION" ] || die "$from is not a forge checkout"
     src=$(CDPATH='' cd -- "$from" && pwd)
 else
     command -v tar >/dev/null 2>&1 || die "tar is required"

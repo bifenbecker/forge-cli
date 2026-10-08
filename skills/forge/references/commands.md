@@ -148,6 +148,9 @@ DESCRIPTION
     GitHub: repos/OWNER/REPO
     GitLab: projects/<url-encoded path>, e.g. projects/group%2Fproject
   On GitHub the gh-style repos/{owner}/{repo} is accepted too and means the same.
+  An endpoint with a repository placeholder ({repo}, {owner}, {branch}, or glab's :id,
+  :fullpath, :repo, :namespace, :group, :branch) needs a repository: outside a checkout
+  without --repo it is a usage error (exit 2). Other endpoints, such as user, work anywhere.
 
 ARGUMENTS
   <endpoint>         API path without the version prefix, e.g. {repo}/branches, user,
@@ -194,12 +197,16 @@ OUTPUT
   Text: the platform CLI's status report (tokens are not shown).
   JSON: {platform, host, authenticated, user}
   authenticated is true or false; user is the username, or null when not authenticated.
-  The JSON is printed in both cases; the exit code is 0 or 1.
+  The JSON is printed whether or not the CLI is logged in; the exit code is 0 or 1. When the
+  state cannot be told (the host is unreachable, the CLI fails), no JSON is printed: the
+  CLI's error goes to stderr and the exit code is 1.
 
 PLATFORM NOTES
-  GitHub: authenticated means the active account for the host has a working token.
+  GitHub: authenticated means the active account for the host has a working token; false
+          means gh has no account for the host. An account whose token check fails (an
+          invalid token or a network error, which gh does not tell apart) prints no JSON.
   GitLab: authenticated means the API answers as a user; a GITLAB_TOKEN in the environment
-          counts as a login.
+          counts as a login. false means the API answered 401 or glab has no token.
 
 EXAMPLES
   forge auth status
@@ -2160,7 +2167,8 @@ ARGUMENTS
 
 FLAGS
   --clone         Clone the fork after creating it
-  --dir <path>    Directory for --clone; default: the fork's name
+  --dir <path>    Directory for --clone; default: the fork's name. It must not exist or be
+                  empty; this is checked before the fork is created (exit 1).
 
 OUTPUT
   Text: the web URL of the fork; with --clone, then the directory on a second line.
@@ -2364,21 +2372,26 @@ NAME
   forge request checks - CI status of a request
 
 USAGE
-  forge request checks [<id>] [--watch [--interval <s>]]
+  forge request checks [<id>] [--watch [--interval <s>] [--grace <s>]]
   forge request checks [<id>] --log <job>
   forge request checks [<id>] --artifacts <job> [--dir <path>]
 
 DESCRIPTION
   Reports the CI run of the request's head commit: one overall status and one entry per job.
   With --log prints one job's log; with --artifacts downloads one job's artifacts.
-  With --watch waits until nothing is pending or running, then reports.
+  With --watch waits until nothing is pending or running, then reports. Right after a push
+  the host may not have registered CI yet, so --watch also keeps polling while the status is
+  none, for up to --grace seconds; if no run has appeared by then, it exits 1.
 
 ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --watch            Poll until the run is finished; exit 1 if it did not succeed
+  --watch            Poll until the run is finished; exit 1 if it did not succeed, or if no
+                     CI run started within --grace
   --interval <s>     Seconds between polls with --watch (default 15)
+  --grace <s>        With --watch, seconds to wait for a CI run to appear (default 120);
+                     0 fails at once when there is none
   --log <job>        Print the log of the job with this name
   --artifacts <job>  Download the artifacts of the job with this name
   --dir <path>       Where artifacts go (default .tmp/ci-artifacts/<job>)
@@ -2387,7 +2400,7 @@ OUTPUT
   Text and JSON: {status, sha, url, jobs: [{stage, name, status, allow_failure, url,
                   started_at, finished_at}]}
   status is success, failed, running, pending, manual, canceled, skipped, or none when no
-  CI ran. --log prints raw text; --artifacts prints the directory.
+  CI ran (exit 0 without --watch). --log prints raw text; --artifacts prints the directory.
 
 PLATFORM NOTES
   GitHub: there is no single run, so status is aggregated: failed beats pending beats success.

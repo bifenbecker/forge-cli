@@ -118,7 +118,10 @@ EOF
     gh_ci_out=$(gh "$@" 2>"$gh_ci_err") || {
         gh_ci_rc=$?
         cat "$gh_ci_err" >&2
-        ! grep -qiE 'not found|404|could not resolve to|could not find' "$gh_ci_err" || gh_ci_rc=$FORGE_EXIT_NOT_FOUND
+        # "could not find any workflows named ..." is gh's own wording for a missing workflow.
+        if forge_err_not_found "$gh_ci_err" || grep -qi 'could not find' "$gh_ci_err"; then
+            gh_ci_rc=$FORGE_EXIT_NOT_FOUND
+        fi
         rm -f "$gh_ci_err"
         return "$gh_ci_rc"
     }

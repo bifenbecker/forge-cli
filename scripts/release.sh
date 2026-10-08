@@ -95,8 +95,15 @@ regex_literal() {
     printf '%s' "$1" | sed 's/[][\.^$*+?(){}|/]/\\&/g'
 }
 
+# ls-remote --exit-code answers 2 for a missing ref; any other failure says nothing about the tag.
 remote_tag_exists() {
-    git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null 2>&1
+    remote_tag_status=0
+    git ls-remote --exit-code --tags origin "refs/tags/$1" >/dev/null || remote_tag_status=$?
+    case $remote_tag_status in
+        0) return 0 ;;
+        2) return 1 ;;
+        *) fail "Cannot reach origin to check tag $1" ;;
+    esac
 }
 
 is_release_commit() {
@@ -191,7 +198,13 @@ prepare() {
     command -v git-cliff >/dev/null 2>&1 || fail "git-cliff is required: https://git-cliff.org/docs/installation"
 
     if [ -z "$VERSION" ]; then
-        VERSION=$(git-cliff --bumped-version 2>/dev/null) || fail "Could not work out the next version"
+        prepare_cliff_err=$(mktemp)
+        VERSION=$(git-cliff --bumped-version 2>"$prepare_cliff_err") || {
+            cat "$prepare_cliff_err" >&2
+            rm -f "$prepare_cliff_err"
+            fail "Could not work out the next version"
+        }
+        rm -f "$prepare_cliff_err"
         if [ "$VERSION" = "$(tag_of "$prepare_current")" ]; then
             echo "Nothing to release since $VERSION"
             return
@@ -238,7 +251,7 @@ prepare() {
     request_description "$prepare_tag" "$(tag_of "$prepare_current")" >"$TEMP_FILE"
     # Only "not found" (4) means there is no request; any other failure must not open a second one.
     prepare_id_status=0
-    prepare_id=$(forge request id "$prepare_branch" 2>/dev/null) || prepare_id_status=$?
+    prepare_id=$(forge request id "$prepare_branch") || prepare_id_status=$?
     [ "$prepare_id_status" = 0 ] || [ "$prepare_id_status" = 4 ] || fail "Cannot tell whether a request for $prepare_branch is open"
     if [ -z "$prepare_id" ]; then
         forge request create --target "$RELEASE_BRANCH" --title "chore(release): $prepare_tag" \

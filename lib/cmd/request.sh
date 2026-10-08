@@ -703,21 +703,26 @@ NAME
   forge request checks - CI status of a request
 
 USAGE
-  forge request checks [<id>] [--watch [--interval <s>]]
+  forge request checks [<id>] [--watch [--interval <s>] [--grace <s>]]
   forge request checks [<id>] --log <job>
   forge request checks [<id>] --artifacts <job> [--dir <path>]
 
 DESCRIPTION
   Reports the CI run of the request's head commit: one overall status and one entry per job.
   With --log prints one job's log; with --artifacts downloads one job's artifacts.
-  With --watch waits until nothing is pending or running, then reports.
+  With --watch waits until nothing is pending or running, then reports. Right after a push
+  the host may not have registered CI yet, so --watch also keeps polling while the status is
+  none, for up to --grace seconds; if no run has appeared by then, it exits 1.
 
 ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --watch            Poll until the run is finished; exit 1 if it did not succeed
+  --watch            Poll until the run is finished; exit 1 if it did not succeed, or if no
+                     CI run started within --grace
   --interval <s>     Seconds between polls with --watch (default 15)
+  --grace <s>        With --watch, seconds to wait for a CI run to appear (default 120);
+                     0 fails at once when there is none
   --log <job>        Print the log of the job with this name
   --artifacts <job>  Download the artifacts of the job with this name
   --dir <path>       Where artifacts go (default .tmp/ci-artifacts/<job>)
@@ -726,7 +731,7 @@ OUTPUT
   Text and JSON: {status, sha, url, jobs: [{stage, name, status, allow_failure, url,
                   started_at, finished_at}]}
   status is success, failed, running, pending, manual, canceled, skipped, or none when no
-  CI ran. --log prints raw text; --artifacts prints the directory.
+  CI ran (exit 0 without --watch). --log prints raw text; --artifacts prints the directory.
 
 PLATFORM NOTES
   GitHub: there is no single run, so status is aggregated: failed beats pending beats success.
@@ -743,11 +748,12 @@ EOF
 }
 
 cmd_request_checks() {
-    arg_id='' opt_watch='' opt_interval=15 opt_log='' opt_artifacts='' opt_dir=''
+    arg_id='' opt_watch='' opt_interval=15 opt_grace=120 opt_log='' opt_artifacts='' opt_dir=''
     while [ $# -gt 0 ]; do
         case $1 in
             --watch) opt_watch=1; shift ;;
             --interval) forge_arg "$@"; opt_interval=$2; shift 2 ;;
+            --grace) forge_arg "$@"; opt_grace=$2; shift 2 ;;
             --log) forge_arg "$@"; opt_log=$2; shift 2 ;;
             --artifacts) forge_arg "$@"; opt_artifacts=$2; shift 2 ;;
             --dir) forge_arg "$@"; opt_dir=$2; shift 2 ;;
@@ -758,6 +764,7 @@ cmd_request_checks() {
     [ -z "$opt_log" ] || [ -z "$opt_artifacts" ] || forge_usage_die "--log and --artifacts cannot be combined"
     [ -z "$opt_dir" ] || [ -n "$opt_artifacts" ] || forge_usage_die "--dir needs --artifacts"
     forge_require_int --interval "$opt_interval"
+    forge_require_int --grace "$opt_grace"
     arg_id=$(request_resolve_id "$arg_id")
 
     if [ -n "$opt_log" ]; then
@@ -774,12 +781,20 @@ cmd_request_checks() {
 
     request_checks_user_jq=$FORGE_JQ
     FORGE_JQ=
+    request_checks_waited=0
     while :; do
         request_checks_doc=$(forge_call request_checks "$arg_id") || exit $?
         request_checks_status=$(printf '%s\n' "$request_checks_doc" | _jq -r '.status')
         [ -n "$opt_watch" ] || break
         case $request_checks_status in
             pending | running) sleep "$opt_interval" ;;
+            none)
+                # Right after a push the host has not registered CI yet; none is not final.
+                # Sleeps are counted instead of reading the clock: date +%s is not POSIX.
+                [ "$request_checks_waited" -lt "$opt_grace" ] || break
+                sleep "$opt_interval"
+                request_checks_waited=$((request_checks_waited + opt_interval))
+                ;;
             *) break ;;
         esac
     done
@@ -787,7 +802,8 @@ cmd_request_checks() {
     forge_emit_doc "$request_checks_doc" '.'
     if [ -n "$opt_watch" ]; then
         case $request_checks_status in
-            success | skipped | none) ;;
+            success | skipped) ;;
+            none) forge_die "no CI run started for the request within $opt_grace s" ;;
             *) exit 1 ;;
         esac
     fi

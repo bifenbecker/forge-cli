@@ -61,15 +61,22 @@ gitlab_repo_clone() {
 }
 
 # A new fork is filled asynchronously, so its first clone can fail for a few seconds.
+# The last attempt runs through forge_capture, so its stderr is what the user sees.
 gitlab_repo_clone_retry() {
+    gl_clone_new=
+    [ -e "$2" ] || gl_clone_new=1
     gl_clone_try=1
     while [ "$gl_clone_try" -lt 6 ]; do
         env GITLAB_HOST="$FORGE_HOST" glab repo clone "$1" "$2" >/dev/null 2>&1 && return 0
-        rm -rf -- "$2"
+        # Only a directory the loop itself created may go; an existing one could be the user's.
+        [ -z "$gl_clone_new" ] || rm -rf -- "$2"
         sleep 5
         gl_clone_try=$((gl_clone_try + 1))
     done
-    forge_capture env GITLAB_HOST="$FORGE_HOST" glab repo clone "$1" "$2" >&2
+    forge_capture env GITLAB_HOST="$FORGE_HOST" glab repo clone "$1" "$2" >&2 && return 0
+    gl_clone_status=$?
+    [ -z "$gl_clone_new" ] || rm -rf -- "$2"
+    return "$gl_clone_status"
 }
 
 gitlab_repo_fork() {

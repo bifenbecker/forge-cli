@@ -22,6 +22,9 @@ DESCRIPTION
     GitHub: repos/OWNER/REPO
     GitLab: projects/<url-encoded path>, e.g. projects/group%2Fproject
   On GitHub the gh-style repos/{owner}/{repo} is accepted too and means the same.
+  An endpoint with a repository placeholder ({repo}, {owner}, {branch}, or glab's :id,
+  :fullpath, :repo, :namespace, :group, :branch) needs a repository: outside a checkout
+  without --repo it is a usage error (exit 2). Other endpoints, such as user, work anywhere.
 
 ARGUMENTS
   <endpoint>         API path without the version prefix, e.g. {repo}/branches, user,
@@ -68,6 +71,16 @@ api_replace() {
     printf '%s' "$api_rp_out$api_rp_in"
 }
 
+# True when the endpoint holds a placeholder that only a repository can fill.
+api_names_repo() {
+    case $1 in
+        *'{repo}'* | *'{owner}'* | *'{branch}'*) return 0 ;;
+        *:fullpath* | *:namespace* | *:group* | *:repo* | *:branch*) return 0 ;;
+        *:id | *:id/* | *':id?'*) return 0 ;;
+    esac
+    return 1
+}
+
 cmd_api() {
     [ $# -gt 0 ] || forge_usage_die "<endpoint> is required"
     arg_endpoint=$1
@@ -75,6 +88,13 @@ cmd_api() {
     case $arg_endpoint in
         -*) forge_usage_die "<endpoint> comes first, got the flag '$arg_endpoint'" ;;
     esac
-    forge_host_only
+    if api_names_repo "$arg_endpoint"; then
+        # Without this, the placeholder for "no repository" would land in the URL as repos/_/_.
+        [ -n "${FORGE_REPO_FLAG:-}" ] || git remote get-url "$(forge_remote_name)" >/dev/null 2>&1 ||
+            forge_usage_die "'$arg_endpoint' names a repository: pass --repo or run inside a checkout"
+        forge_resolve_repo
+    else
+        forge_host_only
+    fi
     forge_call api_call "$@"
 }

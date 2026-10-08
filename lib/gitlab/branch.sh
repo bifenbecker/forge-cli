@@ -43,7 +43,15 @@ gitlab_branch_delete() {
 
 gitlab_branch_protect() {
     forge_capture gitlab_api "$(gitlab_branch_path "$1")" >/dev/null || return $?
-    gl_protect_old=$(gitlab_api "$(gitlab_protected_path "$1")" 2>/dev/null) || gl_protect_old=
+    # 4 means the branch is not protected yet; any other failure stops before anything changes.
+    gl_protect_old_status=0
+    gl_protect_old=$(forge_capture_optional gitlab_api "$(gitlab_protected_path "$1")") ||
+        gl_protect_old_status=$?
+    case $gl_protect_old_status in
+        0) ;;
+        "$FORGE_EXIT_NOT_FOUND") gl_protect_old= ;;
+        *) return "$gl_protect_old_status" ;;
+    esac
     # An existing entry cannot be re-created (409). It is changed in place where the instance
     # allows it, so the branch is never left open; replacing it is the fallback.
     if [ -n "$gl_protect_old" ] && gitlab_branch_protect_patch "$1" "$gl_protect_old"; then
@@ -83,18 +91,9 @@ gitlab_branch_protect_patch() {
 gitlab_branch_unprotect() {
     forge_capture gitlab_api "$(gitlab_branch_path "$1")" >/dev/null || return $?
     gl_unprotect_status=0
-    gl_unprotect_err=$(forge_tmp)
-    gitlab_api "$(gitlab_protected_path "$1")" >/dev/null 2>"$gl_unprotect_err" || gl_unprotect_status=$?
-    if [ "$gl_unprotect_status" -ne 0 ]; then
-        # 404 here means the branch exists but is not protected: nothing to remove.
-        if grep -q '404' "$gl_unprotect_err"; then
-            rm -f "$gl_unprotect_err"
-            return 0
-        fi
-        cat "$gl_unprotect_err" >&2
-        rm -f "$gl_unprotect_err"
-        return "$gl_unprotect_status"
-    fi
-    rm -f "$gl_unprotect_err"
+    forge_capture_optional gitlab_api "$(gitlab_protected_path "$1")" >/dev/null || gl_unprotect_status=$?
+    # Not found here means the branch exists but is not protected: nothing to remove.
+    [ "$gl_unprotect_status" -ne "$FORGE_EXIT_NOT_FOUND" ] || return 0
+    [ "$gl_unprotect_status" -eq 0 ] || return "$gl_unprotect_status"
     forge_capture gitlab_api "$(gitlab_protected_path "$1")" -X DELETE >/dev/null
 }

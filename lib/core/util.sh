@@ -66,7 +66,7 @@ forge_tmp() {
 }
 
 # Runs a command, passes its stdout through, and maps its failure to a forge exit code:
-# 4 when the host said "not found", 1 otherwise. Stderr is replayed as is.
+# 4 when the host said "not found", else the command's own status. Stderr is replayed as is.
 forge_capture() {
     forge_capture_err=$(forge_tmp)
     "$@" 2>"$forge_capture_err" && {
@@ -75,17 +75,30 @@ forge_capture() {
     }
     forge_capture_status=$?
     cat "$forge_capture_err" >&2
-    # GitHub answers 404 to a token without the needed scope: a failure, not "not found".
-    if grep -qi 'needs the .* scope' "$forge_capture_err"; then
-        rm -f "$forge_capture_err"
-        return "$FORGE_EXIT_ERROR"
-    fi
-    if grep -qiE 'not found|HTTP 404|404 Not Found|HTTP 410|410 Gone|could not resolve to|no .* found|does not exist' "$forge_capture_err"; then
+    if forge_err_not_found "$forge_capture_err"; then
         rm -f "$forge_capture_err"
         return "$FORGE_EXIT_NOT_FOUND"
     fi
     rm -f "$forge_capture_err"
     return "$forge_capture_status"
+}
+
+# True when the stderr saved in file $1 says "not found". A bare 404 is not enough: it also
+# turns up in ids, URLs and messages about other things.
+forge_err_not_found() {
+    # GitHub answers 404 to a token without the needed scope: a failure, not "not found".
+    ! grep -qi 'needs the .* scope' "$1" &&
+        grep -qiE 'not found|HTTP 404|404 Not Found|HTTP 410|410 Gone|could not resolve to|no .* found|does not exist' "$1"
+}
+
+# forge_capture for a call where "not found" is an expected answer: on 4 its stderr is dropped.
+forge_capture_optional() {
+    forge_co_err=$(forge_tmp)
+    forge_co_status=0
+    forge_capture "$@" 2>"$forge_co_err" || forge_co_status=$?
+    [ "$forge_co_status" = "$FORGE_EXIT_NOT_FOUND" ] || cat "$forge_co_err" >&2
+    rm -f "$forge_co_err"
+    return "$forge_co_status"
 }
 
 forge_urlencode() {

@@ -224,15 +224,18 @@ else
         note "Review did not finish"
 
     # A model gate can fail for reasons unrelated to the code; only findings block.
-    if [ -f "$review_file" ] && ! jqx -e '.findings | type == "array"' "$review_file" >/dev/null 2>&1; then
+    if [ -f "$review_file" ] && ! jqx -e '.findings | type == "array" and all(.[]; type == "object")' "$review_file" >/dev/null 2>&1; then
         # A file that exists but cannot be read is not a clean review.
         fail "Review wrote $review_file, but it has no readable findings list — check it, or ship with NO_REVIEW=1"
     elif [ -f "$review_file" ]; then
         schema=$(jqx -r '.schema_version // 0' "$review_file" 2>/dev/null || echo 0)
         [ "$schema" = "$REVIEW_SCHEMA_VERSION" ] ||
             note "Review wrote schema $schema, expected $REVIEW_SCHEMA_VERSION — reading it anyway"
-        blocking=$(jqx '[.findings // [] | .[] | select(.severity == "blocking")] | length' "$review_file" 2>/dev/null || echo 0)
-        total=$(jqx '.findings // [] | length' "$review_file" 2>/dev/null || echo 0)
+        # A count that cannot be read must stop the ship, never read as zero.
+        blocking=$(jqx '[.findings[] | select(.severity == "blocking")] | length' "$review_file") ||
+            fail "Cannot count the blocking findings in $review_file"
+        total=$(jqx '.findings | length' "$review_file") ||
+            fail "Cannot count the findings in $review_file"
         [ "$blocking" = 0 ] || fail "Review found $blocking blocking finding(s) — they are in $review_file"
         review_status="$total finding(s), none blocking"
         [ "$total" != 0 ] || review_status="nothing found"
@@ -259,7 +262,7 @@ step "Request"
 
 # Only "not found" (4) means no request; any other failure must not lead to a duplicate.
 request_id_status=0
-request_id=$(forge request id 2>/dev/null) || request_id_status=$?
+request_id=$(forge request id) || request_id_status=$?
 [ "$request_id_status" = 0 ] || [ "$request_id_status" = 4 ] || fail "Cannot tell whether this branch already has a request"
 
 if [ -n "$request_id" ]; then

@@ -169,7 +169,14 @@ fi
 
 if [ -n "$branch" ]; then
     echo "Removing the local branch: $branch"
-    git branch -D "$branch" >/dev/null || echo "The branch is already gone"
+    if ! git_error=$(git branch -D "$branch" 2>&1); then
+        # Only a branch that really no longer exists is fine; a failure to delete one is not.
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+            printf '%s\n' "$git_error" | sed 's/^/  /' >&2
+            exit 1
+        fi
+        echo "The branch is already gone"
+    fi
 else
     echo "No branch to remove: this worktree was no longer registered" >&2
 fi

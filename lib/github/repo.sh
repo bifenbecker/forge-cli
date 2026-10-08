@@ -62,15 +62,22 @@ github_repo_clone() {
 }
 
 # A new fork is filled asynchronously, so its first clone can fail for a few seconds.
+# The last attempt runs through forge_capture, so its stderr is what the user sees.
 github_repo_clone_retry() {
+    gh_clone_new=
+    [ -e "$2" ] || gh_clone_new=1
     gh_clone_try=1
     while [ "$gh_clone_try" -lt 6 ]; do
         gh repo clone "$1" "$2" >/dev/null 2>&1 && return 0
-        rm -rf -- "$2"
+        # Only a directory the loop itself created may go; an existing one could be the user's.
+        [ -z "$gh_clone_new" ] || rm -rf -- "$2"
         sleep 5
         gh_clone_try=$((gh_clone_try + 1))
     done
-    forge_capture gh repo clone "$1" "$2" >&2
+    forge_capture gh repo clone "$1" "$2" >&2 && return 0
+    gh_clone_status=$?
+    [ -z "$gh_clone_new" ] || rm -rf -- "$2"
+    return "$gh_clone_status"
 }
 
 github_repo_fork() {

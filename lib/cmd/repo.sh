@@ -242,7 +242,8 @@ ARGUMENTS
 
 FLAGS
   --clone         Clone the fork after creating it
-  --dir <path>    Directory for --clone; default: the fork's name
+  --dir <path>    Directory for --clone; default: the fork's name. It must not exist or be
+                  empty; this is checked before the fork is created (exit 1).
 
 OUTPUT
   Text: the web URL of the fork; with --clone, then the directory on a second line.
@@ -273,6 +274,13 @@ cmd_repo_fork() {
     done
     [ -z "$opt_dir" ] || [ -n "$opt_clone" ] || forge_usage_die "--dir needs --clone"
     [ -z "$arg_repo" ] || repo_target "$arg_repo"
+    if [ -n "$opt_clone" ]; then
+        # Checked before the fork exists: the default is the source's name, which the fork takes.
+        forge_resolve_repo
+        repo_fork_dir=${opt_dir:-${FORGE_REPO_PATH##*/}}
+        [ ! -e "$repo_fork_dir" ] || [ -z "$(ls -A -- "$repo_fork_dir" 2>/dev/null)" ] ||
+            forge_die "'$repo_fork_dir' already exists and is not empty"
+    fi
     forge_call repo_fork
 }
 
