@@ -24,20 +24,25 @@ config() {
     sh "$ROOT/scripts/workflow.sh" get "$@"
 }
 
-forge() {
-    sh "$ROOT/bin/forge" "$@"
-}
-
 DEFAULT_BASE=$(config git.default_branch)
+DELETE_BRANCH=$(config git.delete_branch false)
 MAX_DIFF_LINES=$(config worktree.max_diff_lines)
 REVIEW_MODEL=$(config review.shallow.model)
 DIFF_PATHS=$(config worktree.diff_paths)
+CHECK_CMD=$(config ship.check)
+# Titles and descriptions are written from the diff; the smallest model got the facts wrong there.
+COMPOSE_MODEL=$(config ship.compose_model sonnet)
+CONFLICT_PATHS=$(config ship.conflict_paths '')
+FORGE_CMD=$(config tools.forge forge)
 REQUEST_DIR=.tmp/request
 REVIEW_DIR=.tmp/review
 REQUEST_SCHEMA_VERSION=1
 REVIEW_SCHEMA_VERSION=2
-# Titles and descriptions are written from the diff; the smallest model got the facts wrong there.
-COMPOSE_MODEL=sonnet
+
+forge() {
+    # shellcheck disable=SC2086 # tools.forge may be a command with arguments, e.g. "sh bin/forge"
+    $FORGE_CMD "$@"
+}
 
 # The headless agents may read anything but run only read-only git and write only their output.
 # The script fetches before calling them, so they need no network.
@@ -45,7 +50,7 @@ READ_ONLY_GIT='Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-pa
 # Flags that would let a read-only git command write files or run programs.
 DENIED_GIT='Bash(git * --output*),Bash(git * -o *),Bash(git * --ext-diff*),Bash(git * --textconv*),Bash(git * --upload-pack*),Bash(git fetch:*)'
 REVIEW_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(mkdir -p .tmp/review),Edit(.tmp/review/**)"
-COMPOSE_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(sh bin/forge request template:*),Bash(mkdir -p .tmp/request),Edit(.tmp/request/**)"
+COMPOSE_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash($FORGE_CMD request template:*),Bash(mkdir -p .tmp/request),Edit(.tmp/request/**)"
 
 BASE=
 DRY_RUN=
@@ -154,6 +159,20 @@ esac
 behind=$(git rev-list --count "HEAD..origin/$BASE")
 [ "$behind" = 0 ] || note "Branch is $behind commit(s) behind origin/$BASE — a rebase is advisable"
 
+# Some files conflict by existing rather than by content: two migrations added on two branches
+# fork the revision graph although merge-tree sees no conflict. Only the base can notice.
+while IFS= read -r conflict_path; do
+    [ -n "$conflict_path" ] || continue
+    mine=$(git diff --name-only --diff-filter=A "origin/$BASE...HEAD" -- "$conflict_path")
+    theirs=$(git diff --name-only --diff-filter=A "HEAD...origin/$BASE" -- "$conflict_path")
+    if [ -n "$mine" ] && [ -n "$theirs" ]; then
+        fail "Both the branch and $BASE added files under $conflict_path since they diverged.
+   Rebase onto origin/$BASE and reconcile them (for migrations: re-point yours at the new head)."
+    fi
+done <<EOF
+$CONFLICT_PATHS
+EOF
+
 echo "Branch:  $branch → $BASE"
 echo "Commits: $commits"
 
@@ -167,8 +186,8 @@ if [ "${changed:-0}" -gt "$MAX_DIFF_LINES" ]; then
     note "Request is $changed lines in $diff_paths_shown against a norm of $MAX_DIFF_LINES — consider splitting it"
 fi
 
-step "Static checks: just check"
-just check || fail "Checks failed — fix them before shipping"
+step "Static checks: $CHECK_CMD"
+sh -c "$CHECK_CMD" || fail "Checks failed — fix them before shipping"
 
 # The checks change nothing by design; anything left behind would ship unreviewed.
 [ -z "$(git status --porcelain)" ] || fail "Checks modified files — review and commit them, then run ship again"
@@ -304,6 +323,7 @@ else
     # Whoever ships is the author; the git process deletes the source branch on merge.
     set -- --target "$target" --title "$title" --assignee @me --body-file "$body_file"
     ! enabled "$DRAFT" || set -- "$@" --draft
+    [ "$DELETE_BRANCH" != true ] || set -- "$@" --delete-branch
     request_id=$(forge request create "$@") || fail "Could not create the request"
     request_id=${request_id##*/}
 fi

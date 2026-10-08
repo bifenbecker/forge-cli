@@ -26,7 +26,7 @@ this skill remembers about it: when the rules change the document changes, and t
 not carry a stale copy of them.
 
 **When the project has a request template, the description is that template filled in** — no
-other shape. `bin/forge request template` prints where the host looks for it. Its headings and the comments under them are the instructions for each
+other shape. `<forge> request template` prints where the host looks for it, `<forge>` being `tools.forge` from the workflow configuration. Its headings and the comments under them are the instructions for each
 section. No template — context and the key changes as a list.
 
 ## Step 2. Read the change

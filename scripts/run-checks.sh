@@ -1,8 +1,8 @@
 #!/bin/sh
 # Runs the checks workflow.toml assigns to a stage: run-checks.sh static | pre_push
 #
-# Each name in [checks] is a just recipe, so a check is defined once, in the justfile, and this
-# file only decides which of them a given gate owes.
+# Each name in [checks] is a recipe of checks.runner (just, make, npm run...), so a check is
+# defined once, in the runner's own file, and this one only decides which a gate owes.
 set -u
 
 cd -- "$(dirname -- "$0")/.." || exit 1
@@ -14,6 +14,7 @@ stage=${1:-}
 }
 
 checks=$(sh scripts/workflow.sh get "checks.$stage") || exit 1
+runner=$(sh scripts/workflow.sh get checks.runner just)
 if [ -z "$(printf '%s' "$checks" | tr -d '[:space:]')" ]; then
     echo "run-checks.sh: [checks].$stage is empty, nothing to run"
     exit 0
@@ -23,7 +24,8 @@ failed=
 while IFS= read -r check; do
     [ -n "$check" ] || continue
     echo "==> $check"
-    just "$check" || failed="$failed $check"
+    # shellcheck disable=SC2086 # the runner may be a command with arguments, e.g. "npm run"
+    $runner "$check" || failed="$failed $check"
 done <<EOF2
 $checks
 EOF2

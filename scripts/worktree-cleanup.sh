@@ -13,6 +13,7 @@
 set -eu
 
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
+FORGE_CMD=$(sh "$ROOT/scripts/workflow.sh" get tools.forge forge)
 WORKTREES_DIR=$(sh "$ROOT/scripts/workflow.sh" get worktree.dir)
 LINKS=$(sh "$ROOT/scripts/workflow.sh" get worktree.link '')
 
@@ -114,9 +115,9 @@ if [ "$forced" = false ]; then
     # A squash merge leaves the branch's commits off main, and the merge deletes the branch on
     # origin. They are saved all the same when a merged request carried exactly this HEAD.
     if [ "$unpushed_count" != 0 ] && [ -n "$branch" ]; then
-        merged_id=$(sh "$ROOT/bin/forge" request id "$branch" --state merged 2>/dev/null || true)
+        merged_id=$($FORGE_CMD request id "$branch" --state merged 2>/dev/null || true)
         if [ -n "$merged_id" ] &&
-            [ "$(sh "$ROOT/bin/forge" request view "$merged_id" --jq .sha 2>/dev/null || true)" = "$(git -C "$worktree_dir" rev-parse HEAD)" ]; then
+            [ "$($FORGE_CMD request view "$merged_id" --jq .sha 2>/dev/null || true)" = "$(git -C "$worktree_dir" rev-parse HEAD)" ]; then
             echo "Branch $branch was merged through request $merged_id; its commits are saved there"
             unpushed_count=0
         fi

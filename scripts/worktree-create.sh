@@ -5,13 +5,16 @@
 #   sh scripts/worktree-create.sh ISSUE=<n> [TITLE="<title>"] [TYPE=<type>] [BASE=<branch>]
 #   sh scripts/worktree-create.sh BRANCH=<branch name> [BASE=<branch>]
 #
-#   ISSUE   the GitHub issue number; its title is read with forge unless TITLE is given
+#   ISSUE   the ticket: an issue number on GitHub/GitLab, else PROJECT-<n> or <n>; its title is
+#           read with board.title (forge for GitHub/GitLab) unless TITLE is given
 #   TITLE   the task's title, which makes the branch slug
 #   TYPE    the branch type (default from git.default_type in workflow.toml)
 #   BRANCH  the whole branch name; no issue is read
 #   BASE    the base branch (default from git.default_branch)
 #
-# The branch name follows git.branch_template in workflow.toml.
+# The branch name follows git.branch_template in workflow.toml. Paths in worktree.link are linked
+# from the main checkout, and worktree.install runs inside the new worktree, so the script works
+# for any project without edits.
 
 set -eu
 
@@ -26,6 +29,17 @@ DEFAULT_TYPE=$(config git.default_type)
 BRANCH_TEMPLATE=$(config git.branch_template)
 WORKTREES_DIR=$(config worktree.dir)
 LINKS=$(config worktree.link '')
+INSTALL_CMD=$(config worktree.install '')
+BOARD_KIND=$(config board.kind '')
+BOARD_PROJECT=$(config board.project '')
+FORGE_CMD=$(config tools.forge forge)
+# How a ticket title is read; {ticket} is substituted. Issues on GitHub/GitLab come from forge.
+TITLE_CMD=$(config board.title '')
+if [ -z "$TITLE_CMD" ]; then
+    case $BOARD_KIND in
+        github | gitlab) TITLE_CMD="$FORGE_CMD issue view {ticket} --jq .title" ;;
+    esac
+fi
 
 # The worktree directory is named after the branch, and a full path on Windows runs into the
 # 260-character limit, so the slug of a long title is cut.
@@ -66,8 +80,35 @@ link_into_worktree() {
     cmd //c mklink "$link_kind" "$(cygpath -w "$2")" "$(cygpath -w "$1")" >/dev/null
 }
 
+# Cyrillic is transliterated the way boards do it when they suggest a branch name; both cases are
+# listed because lowercasing Cyrillic depends on the locale, while replacing bytes does not.
+TRANSLIT='s/а/a/g;s/б/b/g;s/в/v/g;s/г/g/g;s/д/d/g;s/е/e/g;s/ё/e/g;s/ж/zh/g;s/з/z/g;s/и/i/g;s/й/i/g;s/к/k/g;s/л/l/g;s/м/m/g;s/н/n/g;s/о/o/g;s/п/p/g;s/р/r/g;s/с/s/g;s/т/t/g;s/у/u/g;s/ф/f/g;s/х/h/g;s/ц/c/g;s/ч/ch/g;s/ш/sh/g;s/щ/sh/g;s/ъ//g;s/ы/y/g;s/ь//g;s/э/e/g;s/ю/yu/g;s/я/ya/g;s/А/a/g;s/Б/b/g;s/В/v/g;s/Г/g/g;s/Д/d/g;s/Е/e/g;s/Ё/e/g;s/Ж/zh/g;s/З/z/g;s/И/i/g;s/Й/i/g;s/К/k/g;s/Л/l/g;s/М/m/g;s/Н/n/g;s/О/o/g;s/П/p/g;s/Р/r/g;s/С/s/g;s/Т/t/g;s/У/u/g;s/Ф/f/g;s/Х/h/g;s/Ц/c/g;s/Ч/ch/g;s/Ш/sh/g;s/Щ/sh/g;s/Ъ//g;s/Ы/y/g;s/Ь//g;s/Э/e/g;s/Ю/yu/g;s/Я/ya/g'
+
 slugify() {
-    printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//'
+    printf '%s' "$1" | sed "$TRANSLIT" | tr '[:upper:]' '[:lower:]' |
+        sed 's/[^a-z0-9]/-/g; s/--*/-/g; s/^-//; s/-$//'
+}
+
+# GitHub/GitLab issues are numbers. Other boards use PROJECT-<n>; a bare number gets the prefix.
+normalize_issue_key() {
+    nik_key=${1#\#}
+    case $BOARD_KIND in
+        github | gitlab)
+            case $nik_key in
+                '' | *[!0-9]*) fail "Not an issue number: $1" ;;
+            esac
+            ;;
+        *)
+            nik_key=$(printf '%s' "$nik_key" | tr '[:lower:]' '[:upper:]')
+            case $nik_key in
+                *[!0-9]* | '') ;;
+                *) nik_key="$BOARD_PROJECT-$nik_key" ;;
+            esac
+            printf '%s' "$nik_key" | grep -Eqx "$BOARD_PROJECT-[0-9]+" ||
+                fail "Not a ticket: $1 (expected $BOARD_PROJECT-<number> or <number>)"
+            ;;
+    esac
+    printf '%s' "$nik_key"
 }
 
 # Cut at a word boundary, so the branch name does not end mid-word.
@@ -127,20 +168,18 @@ fi
 
 issue_key=
 if [ -n "$ISSUE" ]; then
-    issue_key=${ISSUE#\#}
-    case $issue_key in
-        '' | *[!0-9]*) fail "Not an issue number: $ISSUE" ;;
-    esac
+    issue_key=$(normalize_issue_key "$ISSUE")
     if [ -z "$TITLE" ]; then
-        echo "Reading issue #$issue_key..."
-        TITLE=$(sh "$ROOT/bin/forge" issue view "$issue_key" --jq .title) ||
-            fail "Could not read issue #$issue_key; pass the title: TITLE=\"...\""
+        [ -n "$TITLE_CMD" ] || fail "No board.title command configured for '$BOARD_KIND' — pass TITLE=\"...\""
+        echo "Reading $issue_key..."
+        TITLE=$(sh -c "$(printf '%s' "$TITLE_CMD" | sed "s/{ticket}/$issue_key/g")") ||
+            fail "Could not read $issue_key from the board; pass the title: TITLE=\"...\""
     fi
-    [ -n "$TITLE" ] || fail "Issue #$issue_key has no title"
+    [ -n "$TITLE" ] || fail "$issue_key has no title"
     slug=$(truncate_slug "$(slugify "$TITLE")")
     [ -n "$slug" ] || fail "No slug could be built from \"$TITLE\" — give the branch name with BRANCH="
     BRANCH=$(build_branch_name "$TYPE" "$issue_key" "$slug")
-    echo "Task: #$issue_key — $TITLE"
+    echo "Task: $issue_key — $TITLE"
 fi
 
 # Slashes in a branch name must not become nested directories.
@@ -202,6 +241,11 @@ while IFS= read -r link; do
 done <<EOF
 $LINKS
 EOF
+
+if [ -n "$INSTALL_CMD" ]; then
+    echo "Installing: $INSTALL_CMD"
+    (cd "$worktree_dir" && sh -c "$INSTALL_CMD") || fail "Install failed in $worktree_dir: $INSTALL_CMD"
+fi
 
 echo ""
 echo "=== The worktree is ready ==="

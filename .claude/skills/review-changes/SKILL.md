@@ -101,8 +101,8 @@ Each agent gets, and nothing beyond it:
 - the paths to its own documents, and what was already read out of them;
 - the author's recorded decisions from step 1;
 - for the team lead, the other open requests to the same target
-  (`bin/forge request list --json`) and how to bring each one in to read it
-  (`bin/forge request fetch <id>`);
+  (`<forge> request list --json`, `<forge>` being `tools.forge` from the workflow configuration) and how to bring each one in to read it
+  (`<forge> request fetch <id>`);
 - its finding budget;
 - the output format below.
 
