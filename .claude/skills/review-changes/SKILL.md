@@ -1,16 +1,18 @@
 ---
 name: review-changes
 description: >-
-  Review branch changes at one of two depths: a quick pass over what a linter cannot reach, or
-  the full role-based review. Checks the diff against the base branch using the project's own
+  Review branch changes. Checks the diff against the base branch using the project's own
   documentation, filters out what it cannot back up, and reports findings to chat and to a file.
-  Publishes nothing anywhere. Use before pushing, before opening an MR/PR, or when asked to
-  check or review changes.
 argument-hint: "[--depth shallow|deep] [git range] [--out <findings file>]"
 allowed-tools: Bash, Read, Grep, Glob, Task, Agent, Write
 ---
 
 Review of branch changes. Uses only git, the project's documentation and its workflow configuration.
+Strictly follow the project's documentation, reached through the root `CLAUDE.md`: the git rules,
+the workflow rules and the rest of the documentation index.
+
+IMPORTANT: Reach the git platform only through the project's git platform tool, the one the root
+`CLAUDE.md` names.
 
 ## Step 1. Depth, range and output file
 
@@ -21,42 +23,25 @@ is not "the first argument that does not start with `--`" — `--depth shallow -
 would make the range `shallow`, and a review of a range that does not exist reports nothing and
 looks like a clean bill of health.
 
-```bash
+```
 depth=<value of --depth, else deep>
 out=<value of --out, if given>
 range=<the argument that is neither a flag nor the value of one, if any>
-
-if [ -z "$range" ]; then
-    base=$(sh scripts/workflow.sh get git.default_branch)
-    git fetch origin "$base" --quiet   # may be denied when run by ship.sh, which has fetched already
-    range="origin/${base}...HEAD"
-fi
-
+[ -n "$range" ] || range="origin/$(sh scripts/workflow.sh get git.default_branch)...HEAD"
 branch=$(git branch --show-current)
-# Slashes in a branch name must not turn into nested directories
 : "${out:=.tmp/review/$(printf %s "$branch" | tr / -)-$(git rev-parse --short HEAD).json}"
 mkdir -p "$(dirname "$out")"
-
-git diff "$range" --stat
-git diff "$range" --name-only
-git log --format='%(trailers:key=Decision,valueonly,unfold)' "$range"
 ```
 
-The last command lists the author's recorded decisions — choices made on purpose while the work
-was done, each with its reason. They are part of what every pass gets, see step 4.
-
-The default name is tied to branch and commit, so runs on different branches never clobber
-each other, while a repeated run on the same commit meaningfully overwrites its own file.
-A caller that needs a different name passes `--out`.
+Then read the change with `git`: the diff of the range, and the author's recorded decisions —
+the `Decision` footers of its commits. Every pass gets them, see step 4.
 
 Empty diff — say so and stop, there is nothing to review.
 
 ## Step 2. The review scheme
 
 **Who reviews and against what is the project's decision, not this skill's.** The scheme is the
-document about reviewing changes — find it through the documentation index, the root `CLAUDE.md`
-map or `docs/index.md`, rather than by scanning files. It states what each depth is for and, per
-role, its area, what it applies to and the documents it works from.
+document about reviewing changes — find it through the documentation index, the root `CLAUDE.md` rather than by scanning files.
 
 No such document — stop and say so. Reviewing against rules the project never wrote down produces
 findings nobody agreed to.
@@ -101,8 +86,6 @@ Each agent gets, and nothing beyond it:
 - the paths to its own documents, and what was already read out of them;
 - the author's recorded decisions from step 1;
 - for the team lead, the other open requests to the same target
-  (`<forge> request list --json`, `<forge>` being `tools.forge` from the workflow configuration) and how to bring each one in to read it
-  (`<forge> request fetch <id>`);
 - its finding budget;
 - the output format below.
 

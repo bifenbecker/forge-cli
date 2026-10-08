@@ -1103,7 +1103,7 @@ OUTPUT
   JSON: array of {id, author, body, created_at, updated_at, url}
 
 PLATFORM NOTES
-  Order is not normalised: do not rely on position, pick by content or created_at.
+  Oldest first on both platforms; sort by created_at if the order matters.
 
 EXAMPLES
   forge request comment list 42 --json

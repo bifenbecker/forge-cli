@@ -31,6 +31,7 @@ TAG_TEMPLATE=$(config release.tag_template)
 CURRENT_CMD=$(config release.current)
 BUMP_CMD=$(config release.bump)
 FORGE_CMD=$(config tools.forge forge)
+RUNNER=$(config checks.runner just)
 
 MODE=
 VERSION=
@@ -95,7 +96,9 @@ version_of() {
 }
 
 current_version() {
-    current_v=$(sh -c "$CURRENT_CMD" | tr -d '\r\n') || fail "release.current failed: $CURRENT_CMD"
+    # Captured before trimming: in a pipe only the last command's status counts.
+    current_raw=$(sh -c "$CURRENT_CMD") || fail "release.current failed: $CURRENT_CMD"
+    current_v=$(printf '%s' "$current_raw" | tr -d '\r\n')
     [ -n "$current_v" ] || fail "release.current printed nothing: $CURRENT_CMD"
     printf '%s' "$current_v"
 }
@@ -189,12 +192,12 @@ request_description() {
     cat <<EOF
 ## Context
 
-No ticket — release $1, prepared by \`just release\`.
+No ticket — release $1, prepared by \`$RUNNER release\`.
 
 ## Changes
 
 The $1 section of CHANGELOG.md, and the version bump. The section is in the diff; it is not
-copied here, so a rerun of \`just release\` cannot leave this text stale.
+copied here, so a rerun of \`$RUNNER release\` cannot leave this text stale.
 
 ## How it was checked
 
@@ -268,8 +271,10 @@ prepare() {
     [ "$(current_version)" = "$prepare_version" ] || fail "release.bump did not set the version to $prepare_version"
 
     step "Commit and push"
-    # The tree was clean at preflight, so everything changed now is the release.
-    git add -A
+    # Tracked files only: the bump changes the version files, and anything it leaves untracked
+    # (caches, build output) is not part of the release. CHANGELOG.md may be new.
+    git add CHANGELOG.md
+    git add -u
     git commit --quiet -m "chore(release): $prepare_tag"
     git push --quiet --force origin "$prepare_branch"
 

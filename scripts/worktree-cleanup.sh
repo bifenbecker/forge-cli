@@ -115,11 +115,18 @@ if [ "$forced" = false ]; then
     # A squash merge leaves the branch's commits off main, and the merge deletes the branch on
     # origin. They are saved all the same when a merged request carried exactly this HEAD.
     if [ "$unpushed_count" != 0 ] && [ -n "$branch" ]; then
-        merged_id=$($FORGE_CMD request id "$branch" --state merged 2>/dev/null || true)
-        if [ -n "$merged_id" ] &&
-            [ "$($FORGE_CMD request view "$merged_id" --jq .sha 2>/dev/null || true)" = "$(git -C "$worktree_dir" rev-parse HEAD)" ]; then
+        # Exit 4 means "no merged request"; any other failure means the check itself failed.
+        merged_status=0
+        merged_id=$($FORGE_CMD request id "$branch" --state merged 2>/dev/null) || merged_status=$?
+        merged_sha=
+        if [ "$merged_status" = 0 ]; then
+            merged_sha=$($FORGE_CMD request view "$merged_id" --jq .sha 2>/dev/null) || merged_status=$?
+        fi
+        if [ "$merged_status" = 0 ] && [ "$merged_sha" = "$(git -C "$worktree_dir" rev-parse HEAD)" ]; then
             echo "Branch $branch was merged through request $merged_id; its commits are saved there"
             unpushed_count=0
+        elif [ "$merged_status" != 0 ] && [ "$merged_status" != 4 ]; then
+            echo "Could not check whether $branch was merged (forge exited $merged_status)." >&2
         fi
     fi
     if [ -n "$uncommitted" ] || [ "$unpushed_count" != 0 ]; then

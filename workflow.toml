@@ -10,7 +10,7 @@ squash          = true
 delete_branch   = true
 
 [release]
-version_pattern = '[0-9]+\.[0-9]+\.[0-9]+'
+version_pattern = '[0-9]+\.[0-9]+\.[0-9]+'   # X.Y.Z only: pre-releases would need a semver comparison
 tag_template    = "v{version}"
 current         = 'cat VERSION'                          # prints the current version
 bump            = 'printf "%s\n" {version} > VERSION'    # sets it; {version} is substituted

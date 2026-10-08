@@ -9,46 +9,39 @@ allowed-tools: Bash, Read, Grep, Glob, Write
 ---
 
 Writing the text of a request. This skill creates nothing and touches no host: it produces one
-file and reports where it is. Whoever called it decides what to do with it — open a draft, open
-a regular request, or just read it.
+file and reports where it is.
 
 ## Step 1. Read the rules
 
-The project's git process is the authority. Find it through the documentation index — the root
-`CLAUDE.md` map or `docs/index.md` — and follow it exactly on:
+The project's git process is the authority. Find the git flow and the workflow rules through the
+workflow configuration and the documentation index — the root `CLAUDE.md` — and follow them
+exactly on:
 
 - which branch this kind of work targets;
 - the title template and the language the title must be written in;
 - what the description has to contain.
 
-In this repository that document is `docs/git-flow.md`. Read it rather than relying on what
-this skill remembers about it: when the rules change the document changes, and this skill must
-not carry a stale copy of them.
-
 **When the project has a request template, the description is that template filled in** — no
-other shape. `<forge> request template` prints where the host looks for it, `<forge>` being `tools.forge` from the workflow configuration. Its headings and the comments under them are the instructions for each
-section. No template — context and the key changes as a list.
+other shape. No template — context and the key changes as a list.
 
 ## Step 2. Read the change
 
-```bash
-base=<target branch from the document, unless given as an argument>
-git fetch origin "$base" --quiet   # may be denied when run by ship.sh, which has fetched already
-git log "origin/${base}..HEAD" --format='%s%n%b'
-git log "origin/${base}..HEAD" --format='%(trailers:key=Decision,valueonly,unfold)'
-git diff "origin/${base}...HEAD" --stat
-```
+Read it with `git`, against the target branch — the argument, if given, else the one the git
+process prescribes: the commits, their `Decision` footers and the diff.
 
 Read the diff of anything whose purpose is not obvious from the commit messages. A description
 written from commit subjects alone is a restatement, not an explanation.
 
-The ticket, when there is one, is the GitHub issue in the branch name and the `Refs:` footers.
-Its link is the board's `url` joined with its `issue_uri`, `{ticket}` substituted — both under
-`board` in the workflow configuration. No ticket — the description says so, as the template asks.
+The ticket, when there is one, is named where the git process puts it — the branch name, the
+commit messages, or both. Its link is the board's `url` joined with its `issue_uri`, `{ticket}`
+substituted — both under `board` in the workflow configuration. No ticket — the description says
+so, as the template asks.
 
 ## Step 3. Compose
 
-The title follows the project's template and its language rule. Find them.
+The title follows the project's template and its language rule. Find them and follow them.
+The description follows the request template, if the project has one where its git platform
+looks for it.
 
 The description explains the change to a reviewer who has not been following the branch. It
 fills the template, section by section, and keeps its headings exactly — reviewers find sections
@@ -60,21 +53,15 @@ by them.
 - **Every claim carries its because.** A decision without its reason cannot be weighed, and a
   reviewer will raise it as a finding. The reasons come from the commits and their `Decision`
   footers.
-- **Say something a reader could disagree with.** "Clean", "robust", "improved" carry nothing;
-  name what changed instead.
 - **A section has a source, or it goes.** Decisions come from `Decision` footers only — none in
-  the commits, no Decisions section, however decision-like a commit body reads. An optional
-  section with nothing to say is removed whole, never filled with "None".
+  the commits, no Decisions section.
 - **One line, one behaviour.** A line that lists flags, fields or functions is the diff again;
   say what now works differently and stop.
 - **Short.** The whole description stays under a screen. If it does not fit, the request is too
-  big — say so instead of writing more.
+  big — say so instead of writing more. A caveman style of text is fine, if one is available.
 
 One rule overrides any wish to look thorough: **write only what the diff, the commits and their
-footers show.** Do not invent the reasoning behind a change, and do not report anything as done
-or checked on the strength of it being plausible. Unclear why something was done — state what
-changed and leave the reasoning to the author. Nothing shows how it was checked beyond the tests
-in the diff — say that, rather than claiming more.
+footers show.** Do not invent the reasoning behind a change.
 
 ## Step 4. Write the file
 

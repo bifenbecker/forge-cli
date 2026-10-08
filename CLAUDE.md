@@ -7,9 +7,15 @@ JSON. This repo is also its first user: process scripts call `bin/forge` from th
 
 [docs/index.md](docs/index.md) lists them. Read the one covering the task before starting.
 
-## Tasks
+## Required tools
 
-`just` lists every recipe with its usage. Run it instead of guessing commands.
+**Run `sh bin/forge doctor` before work.** `just` lists every command available in the project.
+
+- **Git platform tool: the forge CLI** — the only way to interact with the git platform (GitHub,
+  GitLab, etc.). In this repository it runs from the working tree: the command is `tools.forge`
+  in the workflow configuration (`sh bin/forge`). When something cannot be read or written with
+  forge, report it, then use the platform's own CLI or MCP directly
+- **Workflow configuration** — `workflow.toml`, read with `sh scripts/workflow.sh get <key> [default]`
 
 # Behavioral guidelines
 
