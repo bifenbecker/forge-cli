@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
+        with:
+          tool: just
+      - name: Install shellcheck and dash
+        run: sudo apt-get install -y --no-install-recommends shellcheck dash
+      - name: Lint
+        run: just lint
+      - name: Runs under dash
+        run: |
+          dash bin/forge --help >/dev/null
+          dash bin/forge --version
+          dash bin/forge request view --help >/dev/null
