@@ -20,6 +20,7 @@ file=${WORKFLOW_FILE:-$root/workflow.toml}
 }
 
 # Single-line values only: scalars, quoted strings, and one-line arrays.
+status=0
 value=$(awk -v wanted="$2" '
     function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t\r]+$/, "", s); return s }
     function strip_comment(s,    out, i, c, q) {
@@ -49,8 +50,16 @@ value=$(awk -v wanted="$2" '
         if (v ~ /^\[/) {
             if (v !~ /\]$/) { print "workflow.sh: keep arrays on one line" > "/dev/stderr"; exit 3 }
             v = substr(v, 2, length(v) - 2)
-            n = split(v, items, ",")
-            for (i = 1; i <= n; i++) { item = trim(items[i]); if (item != "") print unquote(item) }
+            # Split on commas outside quotes, so a quoted item may hold one.
+            item = ""; q = ""
+            for (i = 1; i <= length(v); i++) {
+                c = substr(v, i, 1)
+                if (q == "" && (c == "\"" || c == "\047")) q = c
+                else if (c == q) q = ""
+                else if (c == "," && q == "") { item = trim(item); if (item != "") print unquote(item); item = ""; continue }
+                item = item c
+            }
+            item = trim(item); if (item != "") print unquote(item)
         } else {
             print unquote(v)
         }
@@ -60,7 +69,7 @@ value=$(awk -v wanted="$2" '
     END { if (!found) exit 4 }
 ' "$file") || status=$?
 
-case ${status:-0} in
+case $status in
     0) printf '%s\n' "$value" ;;
     4)
         if [ $# -ge 3 ]; then

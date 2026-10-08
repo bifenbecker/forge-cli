@@ -122,7 +122,7 @@ truncate_slug() {
 }
 
 build_branch_name() {
-    printf '%s' "$BRANCH_TEMPLATE" | sed "s/{type}/$1/; s/{ticket}/$2/; s/{slug}/$3/"
+    printf '%s' "$BRANCH_TEMPLATE" | sed "s/{type}/$1/g; s/{ticket}/$2/g; s/{slug}/$3/g"
 }
 
 ISSUE=

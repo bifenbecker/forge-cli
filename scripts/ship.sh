@@ -239,7 +239,7 @@ else
     out="$review_file" \
         claude -p "Use the review-changes skill with the argument: --depth shallow --out $review_file $review_range" \
         --model "$REVIEW_MODEL" \
-        --allowedTools "$REVIEW_TOOLS" --disallowedTools "$DENIED_GIT" ||
+        --allowedTools "$REVIEW_TOOLS" --disallowedTools "$DENIED_GIT" </dev/null ||
         note "Review did not finish"
 
     # A model gate can fail for reasons unrelated to the code; only findings block.
@@ -293,7 +293,7 @@ else
     out="$request_file" \
         claude -p "Use the compose-request skill with the argument: $BASE --out $request_file" \
         --model "$COMPOSE_MODEL" \
-        --allowedTools "$COMPOSE_TOOLS" --disallowedTools "$DENIED_GIT" ||
+        --allowedTools "$COMPOSE_TOOLS" --disallowedTools "$DENIED_GIT" </dev/null ||
         fail "compose-request failed"
 
     # The name is typed by a model; a file for the same commit under a wrong name is the same work.
@@ -323,7 +323,10 @@ else
     # Whoever ships is the author; the git process deletes the source branch on merge.
     set -- --target "$target" --title "$title" --assignee @me --body-file "$body_file"
     ! enabled "$DRAFT" || set -- "$@" --draft
-    [ "$DELETE_BRANCH" != true ] || set -- "$@" --delete-branch
+    # Only GitLab records branch deletion on the request; GitHub deletes it at merge time.
+    if [ "$DELETE_BRANCH" = true ] && [ "$(forge detect)" = gitlab ]; then
+        set -- "$@" --delete-branch
+    fi
     request_id=$(forge request create "$@") || fail "Could not create the request"
     request_id=${request_id##*/}
 fi
