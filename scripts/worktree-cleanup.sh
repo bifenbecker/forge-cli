@@ -111,6 +111,16 @@ if [ "$forced" = false ]; then
     uncommitted=$(git -C "$worktree_dir" status --porcelain)
     # Commits on no branch of origin, which includes a branch that was never pushed.
     unpushed_count=$(git -C "$worktree_dir" rev-list --count HEAD --not --remotes=origin)
+    # A squash merge leaves the branch's commits off main, and the merge deletes the branch on
+    # origin. They are saved all the same when a merged request carried exactly this HEAD.
+    if [ "$unpushed_count" != 0 ] && [ -n "$branch" ]; then
+        merged_id=$(sh "$ROOT/bin/forge" request id "$branch" --state merged 2>/dev/null || true)
+        if [ -n "$merged_id" ] &&
+            [ "$(sh "$ROOT/bin/forge" request view "$merged_id" --jq .sha 2>/dev/null || true)" = "$(git -C "$worktree_dir" rev-parse HEAD)" ]; then
+            echo "Branch $branch was merged through request $merged_id; its commits are saved there"
+            unpushed_count=0
+        fi
+    fi
     if [ -n "$uncommitted" ] || [ "$unpushed_count" != 0 ]; then
         echo "The worktree $NAME still holds work that is not saved anywhere:" >&2
         [ -z "$uncommitted" ] ||

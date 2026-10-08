@@ -224,7 +224,10 @@ else
         note "Review did not finish"
 
     # A model gate can fail for reasons unrelated to the code; only findings block.
-    if [ -f "$review_file" ]; then
+    if [ -f "$review_file" ] && ! jqx -e '.findings | type == "array"' "$review_file" >/dev/null 2>&1; then
+        # A file that exists but cannot be read is not a clean review.
+        fail "Review wrote $review_file, but it has no readable findings list — check it, or ship with NO_REVIEW=1"
+    elif [ -f "$review_file" ]; then
         schema=$(jqx -r '.schema_version // 0' "$review_file" 2>/dev/null || echo 0)
         [ "$schema" = "$REVIEW_SCHEMA_VERSION" ] ||
             note "Review wrote schema $schema, expected $REVIEW_SCHEMA_VERSION — reading it anyway"
@@ -254,7 +257,10 @@ fi
 
 step "Request"
 
-request_id=$(forge request id 2>/dev/null || true)
+# Only "not found" (4) means no request; any other failure must not lead to a duplicate.
+request_id_status=0
+request_id=$(forge request id 2>/dev/null) || request_id_status=$?
+[ "$request_id_status" = 0 ] || [ "$request_id_status" = 4 ] || fail "Cannot tell whether this branch already has a request"
 
 if [ -n "$request_id" ]; then
     echo "Already open, leaving its text alone"

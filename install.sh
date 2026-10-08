@@ -44,18 +44,35 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# A relative prefix would be written into the wrapper and break it everywhere else.
+case $prefix in
+    /* | [A-Za-z]:[/\]*) ;;
+    *) mkdir -p "$prefix" && prefix=$(CDPATH='' cd -- "$prefix" && pwd) ;;
+esac
+
 home="$prefix/share/forge"
 bin="$prefix/bin/forge"
+MARKER=.forge-install
 
-# Only paths that look like a forge installation are removed.
+# Only what install.sh wrote is removed: the wrapper names FORGE_HOME, the home carries the
+# marker and is not a git checkout. Both are checked before either is deleted.
+check_ours() {
+    if [ -e "$bin" ]; then
+        grep -q 'FORGE_HOME' "$bin" 2>/dev/null || die "$bin was not installed by forge; not touching it"
+    fi
+    if [ -e "$home" ]; then
+        [ -f "$home/$MARKER" ] && [ ! -e "$home/.git" ] ||
+            die "$home was not installed by install.sh; not touching it"
+    fi
+}
+
 remove_install() {
-    if [ -f "$bin" ]; then
-        grep -q 'FORGE_HOME' "$bin" 2>/dev/null || die "$bin was not installed by forge; not removing it"
+    check_ours
+    if [ -e "$bin" ]; then
         rm -f "$bin"
         say "removed $bin"
     fi
-    if [ -d "$home" ]; then
-        [ -f "$home/bin/forge" ] && [ -f "$home/VERSION" ] || die "$home does not look like a forge installation; not removing it"
+    if [ -e "$home" ]; then
         rm -rf "$home"
         say "removed $home"
     fi
@@ -77,6 +94,22 @@ fetch() {
     fi
 }
 
+# Empty output means the repository has no release yet. A failure to ask is fatal: guessing
+# "no release" would install unreleased code.
+latest_tag() {
+    if command -v curl >/dev/null 2>&1; then
+        latest_url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$FORGE_REPO_SLUG/releases/latest") ||
+            die "cannot reach GitHub to find the latest release; pass --version <tag>"
+        case $latest_url in
+            */releases/tag/*) printf '%s' "${latest_url##*/releases/tag/}" ;;
+        esac
+    else
+        latest_json=$(fetch "https://api.github.com/repos/$FORGE_REPO_SLUG/releases?per_page=1") ||
+            die "cannot reach GitHub to find the latest release; pass --version <tag>"
+        printf '%s\n' "$latest_json" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1
+    fi
+}
+
 work=$(mktemp -d 2>/dev/null) || die "cannot create a temporary directory"
 trap 'rm -rf "$work"' EXIT
 
@@ -85,14 +118,11 @@ if [ -n "$from" ]; then
     src=$(CDPATH='' cd -- "$from" && pwd)
 else
     command -v tar >/dev/null 2>&1 || die "tar is required"
-    if [ -z "$version" ]; then
-        version=$(fetch "https://api.github.com/repos/$FORGE_REPO_SLUG/releases/latest" 2>/dev/null |
-            sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1) || true
-    fi
+    [ -n "$version" ] || version=$(latest_tag)
     if [ -n "$version" ]; then
         url="https://github.com/$FORGE_REPO_SLUG/archive/refs/tags/$version.tar.gz"
     else
-        say "no release found; installing the main branch"
+        say "the repository has no release yet; installing the main branch"
         url="https://github.com/$FORGE_REPO_SLUG/archive/refs/heads/main.tar.gz"
     fi
     say "downloading $url"
@@ -102,13 +132,16 @@ else
     [ -n "$src" ] && [ -f "$src/bin/forge" ] || die "the archive does not contain forge"
 fi
 
+check_ours
+
 stage="$work/stage"
 mkdir -p "$stage"
 for item in bin lib VERSION install.sh LICENSE README.md; do
-    [ -e "$src/$item" ] && cp -R "$src/$item" "$stage/"
+    [ ! -e "$src/$item" ] || cp -R "$src/$item" "$stage/"
 done
+: >"$stage/$MARKER"
 
-[ ! -e "$home" ] || remove_install
+[ ! -e "$home" ] && [ ! -e "$bin" ] || remove_install
 mkdir -p "$prefix/share" "$prefix/bin"
 mv "$stage" "$home"
 

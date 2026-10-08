@@ -3,6 +3,8 @@
 #
 # Usage:
 #   sh scripts/release.sh [VERSION=<tag>]
+#   sh scripts/release.sh PUBLISH_ONLY=1      publish if there is something to publish, else
+#                                           exit 0; never prepares. This is what CI runs.
 #
 #   The version on HEAD was set by a release commit,     tag that commit and publish the
 #   and has no tag or no platform release yet             release from its CHANGELOG section
@@ -31,6 +33,7 @@ VERSION_PATTERN=$(config release.version_pattern)
 TAG_TEMPLATE=$(config release.tag_template)
 
 VERSION=
+PUBLISH_ONLY=
 TEMP_FILE=
 RETURN_TO=
 
@@ -41,6 +44,7 @@ usage() {
 for arg in "$@"; do
     case $arg in
         VERSION=*) VERSION=${arg#VERSION=} ;;
+        PUBLISH_ONLY=*) PUBLISH_ONLY=${arg#PUBLISH_ONLY=} ;;
         -h | --help | help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
     esac
@@ -202,7 +206,9 @@ prepare() {
     prepare_branch="release/$prepare_tag"
     ! remote_tag_exists "$prepare_tag" || fail "Tag $prepare_tag already exists"
 
-    prepare_open=$(forge request list --limit 100 --json |
+    # Captured first: piped straight into jq, a failed list would read as "none open".
+    prepare_requests=$(forge request list --limit 100 --json) || fail "Cannot list the open requests"
+    prepare_open=$(printf '%s\n' "$prepare_requests" |
         jqx -r --arg branch "$prepare_branch" \
             '.[] | select((.source_branch | startswith("release/")) and .source_branch != $branch) | .url')
     [ -z "$prepare_open" ] || fail "Another release request is open: $prepare_open. Merge or close it first"
@@ -230,7 +236,10 @@ prepare() {
 
     step "Request"
     request_description "$prepare_tag" "$(tag_of "$prepare_current")" >"$TEMP_FILE"
-    prepare_id=$(forge request id "$prepare_branch" 2>/dev/null || true)
+    # Only "not found" (4) means there is no request; any other failure must not open a second one.
+    prepare_id_status=0
+    prepare_id=$(forge request id "$prepare_branch" 2>/dev/null) || prepare_id_status=$?
+    [ "$prepare_id_status" = 0 ] || [ "$prepare_id_status" = 4 ] || fail "Cannot tell whether a request for $prepare_branch is open"
     if [ -z "$prepare_id" ]; then
         forge request create --target "$RELEASE_BRANCH" --title "chore(release): $prepare_tag" \
             --body-file "$TEMP_FILE" --delete-branch
@@ -266,6 +275,8 @@ if [ -n "$setter" ] && is_release_commit "$setter" "$current_tag" &&
         setter=$(git rev-parse "$current_tag^{commit}")
     fi
     publish "$current" "$setter"
+elif [ -n "$PUBLISH_ONLY" ] && [ "$PUBLISH_ONLY" != 0 ]; then
+    echo "Nothing to publish: $current_tag is published, or HEAD carries no release"
 else
     prepare "$current"
 fi

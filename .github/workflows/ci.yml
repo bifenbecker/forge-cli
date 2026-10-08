@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main]
+  # Manual run on main: publishes a merged release whose automatic run failed.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +30,9 @@ jobs:
   # A merged release request leaves "chore(release): vX.Y.Z (#N)" on main; tag it and publish.
   release:
     needs: lint
-    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release):')
+    if: >-
+      github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release):')))
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,4 +47,5 @@ jobs:
       - name: Publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: sh scripts/release.sh
+        # Never prepares: a rerun, or an unrelated chore(release) commit, ends with "nothing to publish".
+        run: sh scripts/release.sh PUBLISH_ONLY=1
