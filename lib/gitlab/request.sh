@@ -54,6 +54,7 @@ gitlab_api_limit() {
 
 
 gitlab_request_list() {
+    gitlab_need_me "$opt_author $opt_assignee"
     if ! forge_json_mode; then
         set -- mr list -R "$FORGE_R" --per-page "$opt_limit"
         case $opt_state in
@@ -113,28 +114,22 @@ gitlab_request_url() {
 }
 
 gitlab_request_create() {
+    gitlab_need_me "$opt_assignees $opt_reviewers"
     # --yes skips prompts: forge runs unattended.
     set -- mr create -R "$FORGE_R" --yes --source-branch "$opt_source"
     if [ -n "$opt_title" ]; then
         set -- "$@" --title "$opt_title" --description "${FORGE_BODY:-}"
     else
-        set -- "$@" --fill
+        # --fill pushes the branch on glab; gh does not, so the push is switched off.
+        set -- "$@" --fill --push=false
     fi
     [ -z "$opt_target" ] || set -- "$@" --target-branch "$opt_target"
     [ -z "$opt_draft" ] || set -- "$@" --draft
     [ -z "$opt_milestone" ] || set -- "$@" --milestone "$opt_milestone"
     [ -z "$opt_labels" ] || set -- "$@" --label "$(forge_list_csv "$opt_labels")"
     [ -z "$opt_delete_branch" ] || set -- "$@" --remove-source-branch
-    if [ -n "$opt_assignees" ]; then
-        gl_people=
-        while IFS= read -r gl_item; do
-            [ -z "$gl_item" ] || gl_people=$(forge_list_add "$gl_people" "$(gitlab_user "$gl_item")")
-        done <<EOF
-$opt_assignees
-EOF
-        set -- "$@" --assignee "$(forge_list_csv "$gl_people")"
-    fi
-    [ -z "$opt_reviewers" ] || set -- "$@" --reviewer "$(forge_list_csv "$opt_reviewers")"
+    [ -z "$opt_assignees" ] || set -- "$@" --assignee "$(gitlab_users_csv "$opt_assignees")"
+    [ -z "$opt_reviewers" ] || set -- "$@" --reviewer "$(gitlab_users_csv "$opt_reviewers")"
     gl_create_out=$(forge_capture glab "$@") || return $?
     gl_create_url=$(printf '%s\n' "$gl_create_out" | grep -Eo 'https?://[^[:space:]]+/merge_requests/[0-9]+' | tail -n 1)
     [ -n "$gl_create_url" ] || forge_die "glab did not report the new merge request: $gl_create_out"
@@ -158,6 +153,7 @@ EOF
 }
 
 gitlab_request_edit() {
+    gitlab_need_me "$opt_add_assignees $opt_remove_assignees $opt_add_reviewers $opt_remove_reviewers"
     set -- mr update "$1" -R "$FORGE_R" --yes
     gl_edit_base=$#
     [ -z "$opt_title" ] || set -- "$@" --title "$opt_title"
@@ -211,8 +207,11 @@ gitlab_request_merge() {
            else {merge_commit_message: $message} end)
         + (if $sha == "" then {} else {sha: $sha} end)')
     # Nested JSON needs --input; without the Content-Type header GitLab answers 415.
-    if ! gl_merged=$(printf '%s\n' "$gl_payload" | forge_capture gitlab_api "$FORGE_API/merge_requests/$1/merge" \
-        -X PUT --input - -H "Content-Type: application/json"); then
+    gl_merge_status=0
+    gl_merged=$(printf '%s\n' "$gl_payload" | forge_capture gitlab_api "$FORGE_API/merge_requests/$1/merge" \
+        -X PUT --input - -H "Content-Type: application/json") || gl_merge_status=$?
+    if [ "$gl_merge_status" -ne 0 ]; then
+        [ "$gl_merge_status" -ne "$FORGE_EXIT_NOT_FOUND" ] || forge_not_found "no merge request !$1"
         gl_why=$(gitlab_api "$FORGE_API/merge_requests/$1" 2>/dev/null | _jq -r '.detailed_merge_status // empty')
         forge_die "GitLab refused to merge !$1${gl_why:+ (merge status: $gl_why)}"
     fi
@@ -309,10 +308,14 @@ gitlab_request_checks_log() {
 
 gitlab_request_checks_artifacts() {
     gitlab_check_job "$1" "$2" || return $?
-    gl_archive="$3/$2.zip"
-    if ! gitlab_api "$FORGE_API/jobs/$gl_job/artifacts" >"$gl_archive" 2>/dev/null; then
+    # Job names may hold "/", ":" or spaces; the file name may not.
+    gl_archive="$3/$(printf '%s' "$2" | tr '/: []' '_____').zip"
+    gl_artifacts_status=0
+    forge_capture gitlab_api "$FORGE_API/jobs/$gl_job/artifacts" >"$gl_archive" || gl_artifacts_status=$?
+    if [ "$gl_artifacts_status" -ne 0 ]; then
         rm -f "$gl_archive"
-        forge_not_found "job '$2' of pipeline $gl_pipeline published no artifacts"
+        [ "$gl_artifacts_status" -ne "$FORGE_EXIT_NOT_FOUND" ] || forge_not_found "job '$2' of pipeline $gl_pipeline published no artifacts"
+        return "$gl_artifacts_status"
     fi
 }
 
@@ -348,6 +351,7 @@ gitlab_request_comment_inline() {
             base_sha: .diff_refs.base_sha,
             head_sha: .diff_refs.head_sha,
             start_sha: .diff_refs.start_sha,
+            old_path: $path,
             new_path: $path,
             new_line: $line
         }

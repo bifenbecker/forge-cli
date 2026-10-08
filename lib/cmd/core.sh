@@ -248,7 +248,12 @@ EOF
 }
 
 forge_installer() {
-    [ -f "$FORGE_HOME/install.sh" ] || forge_die "no installer at $FORGE_HOME/install.sh: this copy was not installed with install.sh"
+    # install.sh lays forge out as <prefix>/share/forge; a git checkout is not an installation.
+    case $FORGE_HOME in
+        */share/forge) ;;
+        *) forge_die "$FORGE_HOME is not an installation made by install.sh; update it with git instead" ;;
+    esac
+    [ -f "$FORGE_HOME/install.sh" ] || forge_die "no installer at $FORGE_HOME/install.sh"
     forge_installer_prefix=$(CDPATH='' cd -- "$FORGE_HOME/../.." && pwd)
 }
 

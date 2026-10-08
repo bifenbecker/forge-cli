@@ -1,26 +1,31 @@
 # shellcheck shell=sh
 
 forge_main() {
-    FORGE_JSON=
-    FORGE_JQ=
-    FORGE_HELP=
-    FORGE_PATH=
-    FORGE_GROUP=
-    FORGE_BODY=
-    FORGE_BODY_SET=
-    FORGE_SHOW_VERSION=
+    FORGE_JSON=''
+    FORGE_JQ=''
+    FORGE_HELP=''
+    FORGE_PATH=''
+    FORGE_GROUP=''
+    FORGE_BODY=''
+    FORGE_BODY_SET=''
+    FORGE_SHOW_VERSION=''
+    FORGE_REPO_FLAG=''
+    FORGE_RESOLVED=''
+    FORGE_INITIALISED=''
+    FORGE_LOADED_GROUP=''
     forge_jq_probe
 
     # Pull global flags out of the argument list, wherever they are. The list is rotated:
     # each argument is shifted off the front and, unless it is global, appended to the back.
+    # A value that equals a global flag must be written --flag=value; split pieces are not rescanned.
     forge_n=$#
+    forge_kept=0
     while [ "$forge_n" -gt 0 ]; do
         forge_a=$1
         shift
         forge_n=$((forge_n - 1))
         case $forge_a in
             --)
-                set -- "$@" --
                 while [ "$forge_n" -gt 0 ]; do
                     set -- "$@" "$1"
                     shift
@@ -32,17 +37,27 @@ forge_main() {
                 [ "$forge_n" -gt 0 ] || forge_usage_die "$forge_a needs a value"
                 case $forge_a in
                     --jq) FORGE_JQ=$1 FORGE_JSON=1 ;;
-                    *) FORGE_REPO=$1 ;;
+                    *) FORGE_REPO_FLAG=$1 ;;
                 esac
                 shift
                 forge_n=$((forge_n - 1))
                 ;;
             --jq=*) FORGE_JQ=${forge_a#--jq=} FORGE_JSON=1 ;;
-            --repo=*) FORGE_REPO=${forge_a#--repo=} ;;
+            --repo=*) FORGE_REPO_FLAG=${forge_a#--repo=} ;;
             -h | --help) FORGE_HELP=1 ;;
-            --version | -V) FORGE_SHOW_VERSION=1 ;;
+            # Global only before the command: "forge self update --version v1" is the command's flag.
+            --version | -V)
+                if [ "$forge_kept" -eq 0 ]; then
+                    FORGE_SHOW_VERSION=1
+                else
+                    set -- "$@" "$forge_a"
+                fi
+                ;;
             --*=*) set -- "$@" "${forge_a%%=*}" "${forge_a#*=}" ;;
-            *) set -- "$@" "$forge_a" ;;
+            *)
+                set -- "$@" "$forge_a"
+                forge_kept=$((forge_kept + 1))
+                ;;
         esac
     done
 

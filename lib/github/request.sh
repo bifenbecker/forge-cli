@@ -1,6 +1,6 @@
 # shellcheck shell=sh
 
-GH_REQUEST_FIELDS=number,title,state,isDraft,author,headRefName,baseRefName,url,body,labels,assignees,reviewRequests,headRefOid,createdAt,updatedAt,mergedAt,closedAt,mergeable
+GH_REQUEST_FIELDS=number,title,state,isDraft,author,headRefName,baseRefName,url,body,labels,assignees,reviewRequests,headRefOid,createdAt,updatedAt,mergedAt,closedAt,mergeable,latestReviews
 
 GH_REQUEST_DEF='
 def gh_request: {
@@ -15,7 +15,9 @@ def gh_request: {
     description: .body,
     labels: [.labels[].name],
     assignees: [.assignees[].login],
-    reviewers: [.reviewRequests[] | .login // .slug // .name],
+    # Pending requests plus whoever already reviewed: GitLab keeps both in .reviewers.
+    reviewers: ([.reviewRequests[] | .login // .slug // .name]
+        + [.latestReviews[] | .author.login | select(. != null)] | unique),
     sha: .headRefOid,
     created_at: .createdAt,
     updated_at: .updatedAt,
@@ -66,17 +68,21 @@ github_request_view() {
         return
     fi
     gh_view_doc=$(forge_capture gh pr view "$1" -R "$FORGE_R" \
-        --json "$GH_REQUEST_FIELDS,latestReviews,reviewDecision") || return $?
+        --json "$GH_REQUEST_FIELDS,reviewDecision") || return $?
+    # reviewDecision is empty where no review is required; the reviews themselves still count.
     forge_emit_doc "$gh_view_doc" "$GH_REQUEST_DEF gh_request + {
-        approved: (.reviewDecision == \"APPROVED\"),
+        approved: (if (.reviewDecision // \"\") != \"\" then .reviewDecision == \"APPROVED\"
+            else ([.latestReviews[].state] | any(. == \"APPROVED\") and all(. != \"CHANGES_REQUESTED\")) end),
         approved_by: [.latestReviews[] | select(.state == \"APPROVED\") | .author.login],
         decision: (.reviewDecision | lower_or_null)
     }"
 }
 
 github_request_find() {
-    gh_find_doc=$(forge_capture gh pr list -R "$FORGE_R" --head "$1" --state "$2" --limit 1 \
-        --json number) || return $?
+    set -- pr list -R "$FORGE_R" --head "$1" --state "$2" --limit 1 --json number
+    # gh counts merged requests as closed; GitLab does not.
+    [ "$8" != closed ] || set -- "$@" --search is:unmerged
+    gh_find_doc=$(forge_capture gh "$@") || return $?
     printf '%s\n' "$gh_find_doc" | _jq -r '.[0].number // empty'
 }
 
@@ -235,15 +241,39 @@ github_request_approve() {
 
 # --- checks ------------------------------------------------------------------------------
 
+# gh exits 1 on failed checks and 8 on pending ones; with a JSON answer both are answers, not
+# errors. "No checks reported" is an empty answer. Anything else is a real failure.
 github_checks_doc() {
-    # gh exits 1 on failed checks and 8 on pending ones; both are answers, not errors.
-    gh pr checks "$1" -R "$FORGE_R" --json name,state,bucket,link,startedAt,completedAt,workflow \
-        2>/dev/null || true
+    gh_cd_err=$(forge_tmp)
+    gh_cd_status=0
+    gh_cd_out=$(gh pr checks "$1" -R "$FORGE_R" --json name,state,bucket,link,startedAt,completedAt,workflow \
+        2>"$gh_cd_err") || gh_cd_status=$?
+    case $gh_cd_status in
+        0 | 1 | 8)
+            if printf '%s\n' "$gh_cd_out" | _jq -e 'type == "array"' >/dev/null 2>&1; then
+                rm -f "$gh_cd_err"
+                printf '%s\n' "$gh_cd_out"
+                return 0
+            fi
+            ;;
+    esac
+    if grep -qi 'no checks reported' "$gh_cd_err"; then
+        rm -f "$gh_cd_err"
+        printf '[]\n'
+        return 0
+    fi
+    cat "$gh_cd_err" >&2
+    if grep -qiE 'not found|could not resolve to' "$gh_cd_err"; then
+        rm -f "$gh_cd_err"
+        return "$FORGE_EXIT_NOT_FOUND"
+    fi
+    rm -f "$gh_cd_err"
+    [ "$gh_cd_status" -ne 0 ] || gh_cd_status=1
+    return "$gh_cd_status"
 }
 
 github_request_checks() {
-    gh_checks=$(github_checks_doc "$1")
-    [ -n "$gh_checks" ] || gh_checks='[]'
+    gh_checks=$(github_checks_doc "$1") || return $?
     gh_checks_sha=$(forge_capture gh pr view "$1" -R "$FORGE_R" --json headRefOid --jq .headRefOid) ||
         return $?
     # No single run speaks for all checks on GitHub, so the overall status is aggregated.
@@ -252,6 +282,7 @@ github_request_checks() {
             if length == 0 then "none"
             elif any(.[]; .bucket == "fail") then "failed"
             elif any(.[]; .bucket == "pending") then "pending"
+            elif any(.[]; .bucket == "cancel") then "canceled"
             elif any(.[]; .bucket == "pass") then "success"
             else (.[0].bucket | normalise_status)
             end
@@ -271,8 +302,8 @@ github_request_checks() {
 }
 
 github_check_link() {
-    gh_checks=$(github_checks_doc "$1")
-    gh_link=$(printf '%s\n' "${gh_checks:-[]}" |
+    gh_checks=$(github_checks_doc "$1") || exit $?
+    gh_link=$(printf '%s\n' "$gh_checks" |
         _jq -r --arg name "$2" '[.[] | select(.name == $name)] | last | .link // empty')
     [ -n "$gh_link" ] || forge_not_found "request $1 has no check named '$2'"
     case $gh_link in
@@ -340,7 +371,7 @@ query($owner: String!, $repo: String!, $num: Int!, $endCursor: String) {
 
 github_threads_raw() {
     forge_capture github_api graphql --paginate --slurp \
-        -F owner="$(github_owner)" -F repo="$(github_name)" -F num="$1" -f query="$GH_THREADS_QUERY"
+        -f owner="$(github_owner)" -f repo="$(github_name)" -F num="$1" -f query="$GH_THREADS_QUERY"
 }
 
 github_request_thread_list() {

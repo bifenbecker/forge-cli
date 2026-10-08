@@ -898,6 +898,8 @@ USAGE
 DESCRIPTION
   Fetches the head of the request, including requests from forks, into
   refs/remotes/<remote>/request/<id>, without touching the working tree.
+  With --repo, it fetches from that repository by URL into
+  refs/forge/<host>/<path>/request/<id>.
 
 ARGUMENTS
   <id>   Request number
@@ -929,6 +931,12 @@ cmd_request_fetch() {
     esac
     request_fetch_remote=$(forge_remote_name)
     request_fetch_ref="refs/remotes/$request_fetch_remote/request/$arg_id"
+    # --repo names another repository: fetch from it by URL, into a ref that cannot be confused
+    # with the local remote's requests.
+    if [ -n "$FORGE_REPO_FLAG" ]; then
+        request_fetch_remote="https://$FORGE_HOST/$FORGE_REPO_PATH.git"
+        request_fetch_ref="refs/forge/$(printf %s "$FORGE_HOST" | tr : _)/$FORGE_REPO_PATH/request/$arg_id"
+    fi
     git fetch -q "$request_fetch_remote" "+$request_fetch_src:$request_fetch_ref" ||
         forge_die "cannot fetch $request_fetch_src from $request_fetch_remote"
     if forge_json_mode; then
@@ -1191,6 +1199,10 @@ FLAGS
 OUTPUT
   Text: the thread id.
   JSON: {thread_id, comment_id, path, line, url}
+
+PLATFORM NOTES
+  <line> must be an added or changed line. GitLab also anchors unchanged context lines only
+  with the old line number, which this command does not send: it fails there.
 
 EXAMPLES
   forge request comment inline 42 src/app.sh 17 --body "Quote this variable"

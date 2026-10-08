@@ -8,12 +8,20 @@ forge_remote_name() {
     fi
 }
 
-# Host and path of a git URL: git@host:a/b.git, ssh://git@host:22/a/b.git, https://host/a/b
+# Host and path of a git URL: git@host:a/b.git, ssh://git@host:22/a/b.git, https://host:8443/a/b
+# The port is kept for http(s), where it addresses the API too, and dropped for ssh.
 forge_url_host() {
     case $1 in
-        *://*) printf '%s\n' "$1" | sed 's#^[a-zA-Z0-9+.-]*://##; s#^[^@/]*@##; s#[:/].*$##' ;;
-        *) printf '%s\n' "$1" | sed 's#^[^@]*@##; s#:.*$##' ;;
+        http://* | https://*) forge_uh=$(printf '%s\n' "$1" | sed 's#^[a-zA-Z]*://##; s#^[^@/]*@##; s#/.*$##') ;;
+        *://*) forge_uh=$(printf '%s\n' "$1" | sed 's#^[a-zA-Z0-9+.-]*://##; s#^[^@/]*@##; s#[:/].*$##') ;;
+        *) forge_uh=$(printf '%s\n' "$1" | sed 's#^[^@]*@##; s#:.*$##') ;;
     esac
+    # SSH-over-443 endpoints serve the same hosts.
+    case $forge_uh in
+        ssh.github.com) forge_uh=github.com ;;
+        altssh.gitlab.com) forge_uh=gitlab.com ;;
+    esac
+    printf '%s\n' "$forge_uh"
 }
 
 forge_url_path() {
@@ -24,7 +32,7 @@ forge_url_path() {
 }
 
 forge_platform_of_host() {
-    case $1 in
+    case ${1%%:*} in
         github.com | *.github.com | *.ghe.com) printf 'github' ;;
         gitlab.com | gitlab.* | *.gitlab.com) printf 'gitlab' ;;
         *)
@@ -83,8 +91,8 @@ forge_resolve_repo() {
     FORGE_HOST=
     FORGE_REPO_PATH=
     forge_rr_url=''
-    if [ -n "${FORGE_REPO:-}" ]; then
-        forge_parse_repo_flag "$FORGE_REPO"
+    if [ -n "${FORGE_REPO_FLAG:-}" ]; then
+        forge_parse_repo_flag "$FORGE_REPO_FLAG"
         # A bare OWNER/REPO lives on the same host as the current checkout, when there is one.
         if [ -z "$FORGE_HOST" ]; then
             forge_rr_url=$(git remote get-url "$(forge_remote_name)" 2>/dev/null || true)
@@ -94,8 +102,19 @@ forge_resolve_repo() {
         forge_rr_remote=$(forge_remote_name)
         forge_rr_url=$(git remote get-url "$forge_rr_remote" 2>/dev/null) ||
             forge_die "no git remote '$forge_rr_remote' here; run inside a repository or pass --repo [HOST/]OWNER/REPO"
+        case $forge_rr_url in
+            file://* | /* | ./* | ../* | [A-Za-z]:/* | [A-Za-z]:\\*)
+                forge_die "remote '$forge_rr_remote' is a local path ($forge_rr_url); pass --repo HOST/OWNER/REPO" ;;
+        esac
         FORGE_HOST=$(forge_url_host "$forge_rr_url")
         FORGE_REPO_PATH=$(forge_url_path "$forge_rr_url")
+    fi
+
+    # An ssh alias such as git@github-work:o/r names no real host; this says which one it is.
+    # It applies to hosts read from the remote, not to one given in --repo.
+    if [ -n "$forge_rr_url" ]; then
+        forge_rr_override=${FORGE_HOSTNAME:-$(git config --get forge.host 2>/dev/null || true)}
+        [ -z "$forge_rr_override" ] || FORGE_HOST=$forge_rr_override
     fi
 
     if [ -z "${FORGE_PLATFORM:-}" ]; then
