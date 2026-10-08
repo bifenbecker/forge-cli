@@ -26,7 +26,10 @@ github_secret_set() {
     printf '%s' "$FORGE_BODY" | forge_capture gh "$@" >/dev/null || return $?
     forge_json_mode || return 0
     gh_secret_doc=$(github_secret_doc) || return $?
-    forge_emit_doc "$gh_secret_doc" "$GH_SECRET_DEF .[] | select(.name == \$n) | gh_secret" --arg n "$arg_name"
+    # GitHub stores secret names upper-cased, whatever case they were set with.
+    forge_emit_doc "$gh_secret_doc" \
+        "$GH_SECRET_DEF .[] | select((.name | ascii_upcase) == (\$n | ascii_upcase)) | gh_secret" \
+        --arg n "$arg_name"
 }
 
 github_secret_delete() {

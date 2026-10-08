@@ -113,7 +113,8 @@ FLAGS
   -L, --limit <n>          At most this many runs (default 20)
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one pipeline per line, tab-separated: id, status, ref, created_at.
   JSON: array of $CI_RUN_SHAPE
   $CI_STATUS_NOTE
 
@@ -151,6 +152,7 @@ cmd_ci_run_list() {
     [ -z "$opt_status" ] ||
         forge_require_one_of --status "$opt_status" success failed running pending canceled skipped manual
     forge_require_int --limit "$opt_limit"
+    [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     forge_call ci_run_list
 }
 

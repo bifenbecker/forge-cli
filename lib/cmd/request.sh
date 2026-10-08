@@ -4,7 +4,8 @@
 REQUEST_JSON_SHAPE='{id, title, state, draft, author, source_branch, target_branch, url,
          description, labels[], assignees[], reviewers[], sha, created_at, updated_at,
          merged_at, closed_at, mergeable}
-  state is open, closed or merged. mergeable is true, false or null (not yet known).'
+  state is open, closed or merged. mergeable is true, false or null (not yet known).
+  description is null when empty.'
 
 help_request() {
     cat <<'EOF'
@@ -91,7 +92,8 @@ FLAGS
   --search <text>      Free-text search in title and description
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one request per line, tab-separated: !id, title, source -> target.
   JSON: array of $REQUEST_JSON_SHAPE
 
 PLATFORM NOTES
@@ -125,6 +127,7 @@ cmd_request_list() {
     done
     forge_require_one_of --state "$opt_state" open closed merged all
     forge_require_int --limit "$opt_limit"
+    [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     forge_call request_list
 }
 
@@ -196,18 +199,22 @@ DESCRIPTION
   for the same source branch.
 
 FLAGS
-  --title <text>          Title; required unless --fill
-  --body <text>           Description
-  --body-file <path|->    Description from a file, or - for stdin
-  --target <branch>       Branch to merge into; default: the repository default branch
-  --source <branch>       Branch to merge from; default: the current branch
-  --draft                 Open as a draft
-  --assignee <user>       Assign; @me for yourself; repeatable
-  --reviewer <user>       Ask for review; repeatable
-  --label <name>          Add a label; repeatable
-  --milestone <name>      Put in a milestone
-  --delete-branch         Delete the source branch when merged
-  --fill                  Take title and description from the commits
+  -t, --title <text>        Title; required unless --fill
+  -b, --body <text>         Description
+  -F, --body-file <path|->  Description from a file, or - for stdin
+  --target <branch>         Branch to merge into (alias: --base); default: the repository
+                            default branch
+  --source <branch>         Branch to merge from (alias: --head); default: the current branch
+  --draft                   Open as a draft
+  --assignee <user>         Assign; @me for yourself; repeatable
+  --reviewer <user>         Ask for review; repeatable
+  --label <name>            Add a label; repeatable
+  --milestone <name>        Put in a milestone
+  --delete-branch           Delete the source branch when merged
+  --fill                    Take title and description, when not given, from the commits
+                            between <remote>/<target> and the source branch: one commit
+                            gives its subject and body; several give the branch name and
+                            a list of their subjects. Reads the local clone and pushes nothing.
 
 OUTPUT
   Text: the URL of the new request.
@@ -250,8 +257,44 @@ cmd_request_create() {
         opt_source=$(forge_current_branch)
         [ -n "$opt_source" ] || forge_usage_die "HEAD is detached: pass --source <branch>"
     fi
+    [ -z "$opt_fill" ] || request_fill
     request_create_id=$(forge_call request_create) || exit $?
     request_report "$request_create_id"
+}
+
+# Fills title and description that were not given from the commits between the remote target
+# and the source branch. Done here rather than with glab --fill, which pushes the branch, so both
+# platforms word the request the same way.
+request_fill() {
+    request_fill_remote=$(forge_remote_name)
+    if [ -z "$opt_target" ]; then
+        opt_target=$(forge_call request_default_branch) || exit $?
+        [ -n "$opt_target" ] || forge_die "cannot fill from commits: the host names no default branch; pass --target"
+    fi
+    request_fill_base="$request_fill_remote/$opt_target"
+    git rev-parse --verify --quiet "$request_fill_base^{commit}" >/dev/null ||
+        forge_die "cannot fill from commits: $request_fill_base is unknown here; run 'git fetch $request_fill_remote' or pass --title"
+    # The pushed branch is what the request will hold; the local one may be ahead of it.
+    request_fill_head="$request_fill_remote/$opt_source"
+    git rev-parse --verify --quiet "$request_fill_head^{commit}" >/dev/null || request_fill_head=$opt_source
+    request_fill_count=$(git rev-list --count "$request_fill_base..$request_fill_head" 2>/dev/null) ||
+        forge_die "cannot fill from commits: no branch $opt_source here"
+    case $request_fill_count in
+        0) forge_die "no commits between $request_fill_base and $request_fill_head to fill from" ;;
+        1)
+            request_fill_title=$(git log -1 --format=%s "$request_fill_head")
+            request_fill_body=$(git log -1 --format=%b "$request_fill_head")
+            ;;
+        *)
+            request_fill_title=$opt_source
+            request_fill_body=$(git log --reverse --format='- %s' "$request_fill_base..$request_fill_head")
+            ;;
+    esac
+    [ -n "$opt_title" ] || opt_title=$request_fill_title
+    if [ -z "${FORGE_BODY_SET:-}" ]; then
+        FORGE_BODY=$request_fill_body
+        FORGE_BODY_SET=1
+    fi
 }
 
 # --- edit --------------------------------------------------------------------------------
@@ -275,10 +318,10 @@ ARGUMENTS
   <id>                       Request number; default: the open request of the current branch
 
 FLAGS
-  --title <text>             New title
-  --body <text>              New description
-  --body-file <path|->       New description from a file, or - for stdin
-  --target <branch>          New target branch
+  -t, --title <text>         New title
+  -b, --body <text>          New description
+  -F, --body-file <path|->   New description from a file, or - for stdin
+  --target <branch>          New target branch (alias: --base)
   --milestone <name>         Move to this milestone
   --add-label <name>         Add a label; repeatable
   --remove-label <name>      Remove a label; repeatable
@@ -340,8 +383,8 @@ ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --comment <text>   Comment to leave before closing
-  --delete-branch    Also delete the source branch on the remote
+  -c, --comment <text>  Comment to leave before closing
+  -d, --delete-branch   Also delete the source branch on the remote
 
 OUTPUT
   Text: the URL of the request.
@@ -423,14 +466,14 @@ ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --squash           Squash all commits into one
-  --merge            Create a merge commit
-  --rebase           Rebase the commits onto the target (GitHub only)
-  --delete-branch    Delete the source branch after merging
-  --sha <commit>     Merge only if the head is still this commit
-  --message <text>   Commit message of the squash or merge commit; the first line is the
-                     subject, the rest after a blank line the body
-  --auto             Merge automatically once required checks pass
+  --squash              Squash all commits into one
+  --merge               Create a merge commit
+  --rebase              Rebase the commits onto the target (GitHub only)
+  -d, --delete-branch   Delete the source branch after merging
+  --sha <commit>        Merge only if the head is still this commit
+  -m, --message <text>  Commit message of the squash or merge commit; the first line is the
+                        subject, the rest after a blank line the body
+  --auto                Merge automatically once required checks pass
 
 OUTPUT
   Text and JSON: {state, sha, auto_merge}
@@ -535,7 +578,7 @@ ARGUMENTS
   <id>              Request number
 
 FLAGS
-  --branch <name>   Local branch name; default: the source branch name
+  -b, --branch <name>  Local branch name; default: the source branch name
 
 OUTPUT
   Text: the platform CLI's progress. No JSON.
@@ -618,9 +661,9 @@ ARGUMENTS
   <id>                   Request number; default: the open request of the current branch
 
 FLAGS
-  --body <text>          Comment to go with the approval
-  --body-file <path|->   The comment from a file, or - for stdin
-  --sha <commit>         Approve only if the head is still this commit (GitLab)
+  -b, --body <text>         Comment to go with the approval
+  -F, --body-file <path|->  The comment from a file, or - for stdin
+  --sha <commit>            Approve only if the head is still this commit (GitLab)
 
 OUTPUT
   Text: the URL of the request.
@@ -1085,8 +1128,8 @@ ARGUMENTS
   <id>                   Request number; default: the open request of the current branch
 
 FLAGS
-  --body <text>          Comment text (Markdown)
-  --body-file <path|->   Comment text from a file, or - for stdin
+  -b, --body <text>         Comment text (Markdown)
+  -F, --body-file <path|->  Comment text from a file, or - for stdin
 
 OUTPUT
   Text: the comment id.
@@ -1139,8 +1182,8 @@ ARGUMENTS
   <comment-id>           Comment id from 'forge request comment list'
 
 FLAGS
-  --body <text>          New text
-  --body-file <path|->   New text from a file, or - for stdin
+  -b, --body <text>         New text
+  -F, --body-file <path|->  New text from a file, or - for stdin
 
 OUTPUT
   Text: the comment id.
@@ -1193,8 +1236,8 @@ ARGUMENTS
   <line>                 Line number in the new version of the file
 
 FLAGS
-  --body <text>          Comment text (Markdown; may contain a suggestion fence)
-  --body-file <path|->   Comment text from a file, or - for stdin
+  -b, --body <text>         Comment text (Markdown; may contain a suggestion fence)
+  -F, --body-file <path|->  Comment text from a file, or - for stdin
 
 OUTPUT
   Text: the thread id.
@@ -1326,8 +1369,8 @@ ARGUMENTS
   <thread-id>            Thread id from 'forge request thread list'
 
 FLAGS
-  --body <text>          Reply text
-  --body-file <path|->   Reply text from a file, or - for stdin
+  -b, --body <text>         Reply text
+  -F, --body-file <path|->  Reply text from a file, or - for stdin
 
 OUTPUT
   Text: the id of the new reply.

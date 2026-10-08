@@ -34,17 +34,15 @@ gitlab_milestone_shape() {
 }
 
 gitlab_milestone_list() {
-    gl_ms_q="$FORGE_API/milestones?order_by=created_at&sort=desc"
+    gl_ms_q="$FORGE_API/milestones?per_page=100"
     case $opt_state in
         open) gl_ms_q="$gl_ms_q&state=active" ;;
         closed) gl_ms_q="$gl_ms_q&state=closed" ;;
     esac
-    if [ "$opt_limit" -le 100 ]; then
-        gl_ms_list=$(forge_capture gitlab_api "$gl_ms_q&per_page=$opt_limit") || return $?
-    else
-        gl_ms_list=$(forge_capture gitlab_api_all "$gl_ms_q&per_page=100") || return $?
-    fi
-    printf '%s\n' "$gl_ms_list" | _jq --argjson n "$opt_limit" "$GL_MILESTONE_DEF [.[] | gl_milestone] | .[:\$n]"
+    # The milestones API takes no order_by or sort: all pages are read and sorted here.
+    gl_ms_list=$(forge_capture gitlab_api_all "$gl_ms_q") || return $?
+    printf '%s\n' "$gl_ms_list" | _jq --argjson n "$opt_limit" \
+        "$GL_MILESTONE_DEF sort_by(.created_at) | reverse | .[:\$n] | [.[] | gl_milestone]"
 }
 
 gitlab_milestone_view() {

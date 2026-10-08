@@ -3,8 +3,8 @@
 
 RELEASE_JSON_SHAPE='{tag, name, notes, url, author, draft, prerelease, created_at, published_at,
          assets: [{name, url}]}
-  url is the release page; assets[].url downloads the file. GitLab has no drafts or
-  pre-releases: draft is always false and prerelease always null there.'
+  notes is null when empty. url is the release page; assets[].url downloads the file. GitLab
+  has no drafts or pre-releases: draft is always false and prerelease always null there.'
 
 help_release() {
     cat <<'EOF'
@@ -73,7 +73,8 @@ FLAGS
   -L, --limit <n>   At most this many releases (default 30)
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one release per line, tab-separated: tag, name, released_at.
   JSON: array of $RELEASE_JSON_SHAPE
 
 PLATFORM NOTES
@@ -97,6 +98,7 @@ cmd_release_list() {
         esac
     done
     forge_require_int --limit "$opt_limit"
+    [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     forge_call release_list
 }
 
@@ -197,13 +199,13 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     Title; default: the tag
-  -b, --body <text>      Release notes (alias: --notes); default: empty
+  -b, --body <text>      Release notes (alias: -n, --notes); default: empty
   -F, --body-file <path|->
                          Release notes from a file, or - for stdin (alias: --notes-file)
   --target <ref>         Branch or commit SHA to tag when <tag> does not exist;
                          default: the default branch. Ignored when the tag exists.
-  --draft                Save as an unpublished draft (GitHub only)
-  --prerelease           Mark as a pre-release (GitHub only)
+  -d, --draft            Save as an unpublished draft (GitHub only)
+  -p, --prerelease       Mark as a pre-release (GitHub only)
 
 OUTPUT
   Text: the URL of the release.
@@ -264,7 +266,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     New title
-  -b, --body <text>      New release notes, replacing the old (alias: --notes)
+  -b, --body <text>      New release notes, replacing the old (alias: -n, --notes)
   -F, --body-file <path|->
                          New release notes from a file, or - for stdin (alias: --notes-file)
   --draft                Turn back into a draft (GitHub only)
@@ -327,7 +329,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     Title; default on creation: the tag; on update: unchanged
-  -b, --body <text>      Release notes (alias: --notes); on update, unchanged when omitted
+  -b, --body <text>      Release notes (alias: -n, --notes); on update, unchanged when omitted
   -F, --body-file <path|->
                          Release notes from a file, or - for stdin (alias: --notes-file)
 
@@ -375,7 +377,7 @@ ARGUMENTS
   <tag>           Tag of the release
 
 FLAGS
-  --cleanup-tag   Also delete the tag on the remote
+  --cleanup-tag   Also delete the tag on the remote (alias: --with-tag)
 
 OUTPUT
   Text: nothing.

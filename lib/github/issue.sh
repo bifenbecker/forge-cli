@@ -3,13 +3,14 @@
 GH_ISSUE_FIELDS=number,title,state,author,url,body,labels,assignees,milestone,createdAt,updatedAt,closedAt
 
 GH_ISSUE_DEF='
+def blank_null: if . == "" then null else . end;
 def gh_issue: {
     id: .number,
     title,
     state: (.state | ascii_downcase),
     author: .author.login,
     url,
-    description: .body,
+    description: (.body | blank_null),
     labels: [.labels[].name],
     assignees: [.assignees[].login],
     milestone: (.milestone.title // null),
@@ -159,12 +160,6 @@ github_issue_label_add() {
     forge_capture gh issue edit "$1" -R "$FORGE_R" --add-label "$(forge_list_csv "$2")" >/dev/null
 }
 
-# One call per label: gh fails the whole edit when one of them is not on the issue.
 github_issue_label_remove() {
-    gh_label_id=$1
-    while IFS= read -r gh_label; do
-        [ -z "$gh_label" ] || gh issue edit "$gh_label_id" -R "$FORGE_R" --remove-label "$gh_label" >/dev/null 2>&1 || true
-    done <<EOF
-$2
-EOF
+    github_labels_remove "$1" "$2"
 }

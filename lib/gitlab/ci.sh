@@ -54,7 +54,8 @@ gitlab_ci_post_json() {
 
 gitlab_ci_run_list() {
     gitlab_ci_no_workflow
-    if ! forge_json_mode; then
+    # glab lists one page of at most 100; past that the text table is built from the API.
+    if ! forge_json_mode && [ "$opt_limit" -le 100 ]; then
         set -- ci list -R "$FORGE_R" --per-page "$opt_limit"
         [ -z "$opt_branch" ] || set -- "$@" --ref "$opt_branch"
         [ -z "$opt_status" ] || set -- "$@" --status "$opt_status"
@@ -69,7 +70,11 @@ gitlab_ci_run_list() {
     [ -z "$opt_sha" ] || gl_ci_q="$gl_ci_q&sha=$(forge_urlencode "$opt_sha")"
     [ -z "$opt_event" ] || gl_ci_q="$gl_ci_q&source=$(forge_urlencode "$opt_event")"
     gl_ci_list=$(gitlab_api_limit "$gl_ci_q" "$opt_limit") || return $?
-    forge_emit_doc "$gl_ci_list" "$GL_CI_DEF [.[] | gl_ci_run]"
+    if forge_json_mode; then
+        forge_emit_doc "$gl_ci_list" "$GL_CI_DEF [.[] | gl_ci_run]"
+    else
+        printf '%s\n' "$gl_ci_list" | _jq -r '.[] | [.id, .status, .ref, .created_at] | @tsv'
+    fi
 }
 
 gitlab_ci_run_view() {

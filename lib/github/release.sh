@@ -4,10 +4,11 @@ GH_RELEASE_FIELDS=tagName,name,body,url,author,isDraft,isPrerelease,createdAt,pu
 
 # gh release view --json and the REST API name the same things differently.
 GH_RELEASE_DEF='
+def blank_null: if . == "" then null else . end;
 def gh_release: {
     tag: .tagName,
     name,
-    notes: .body,
+    notes: (.body | blank_null),
     url,
     author: .author.login,
     draft: .isDraft,
@@ -19,7 +20,7 @@ def gh_release: {
 def gh_release_rest: {
     tag: .tag_name,
     name,
-    notes: .body,
+    notes: (.body | blank_null),
     url: .html_url,
     author: .author.login,
     draft,
@@ -103,7 +104,7 @@ github_release_edit() {
 github_release_publish() {
     # Without this check gh would tag the default branch; publish only releases what was pushed.
     gh_pub_status=0
-    github_release_probe github_api "$FORGE_API/git/ref/tags/$1" >/dev/null || gh_pub_status=$?
+    github_release_probe github_api "$FORGE_API/git/ref/tags/$(github_ref_path "$1")" >/dev/null || gh_pub_status=$?
     case $gh_pub_status in
         0) ;;
         "$FORGE_EXIT_NOT_FOUND") forge_not_found "tag $1 does not exist on $FORGE_HOST: push it first" ;;

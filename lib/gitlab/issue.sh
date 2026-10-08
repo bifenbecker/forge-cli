@@ -1,13 +1,14 @@
 # shellcheck shell=sh
 
 GL_ISSUE_DEF='
+def blank_null: if . == "" then null else . end;
 def gl_issue: {
     id: .iid,
     title,
     state: (if .state == "opened" then "open" else .state end),
     author: .author.username,
     url: .web_url,
-    description,
+    description: (.description | blank_null),
     labels: (.labels // []),
     assignees: [(.assignees // [])[].username],
     milestone: (.milestone.title // null),
@@ -23,10 +24,10 @@ gitlab_issue_url_of() {
     printf '%s/-/issues/%s' "$(gitlab_web_url)" "$1"
 }
 
-# GET a list endpoint with at most $2 items, following pages past 100.
 gitlab_issue_list() {
     gitlab_need_me "$opt_author $opt_assignee"
-    if ! forge_json_mode; then
+    # glab lists one page of at most 100; past that the text table is built from the API.
+    if ! forge_json_mode && [ "$opt_limit" -le 100 ]; then
         set -- issue list -R "$FORGE_R" --per-page "$opt_limit"
         case $opt_state in
             closed) set -- "$@" --closed ;;
@@ -52,7 +53,12 @@ gitlab_issue_list() {
     [ -z "$opt_milestone" ] || gl_q="$gl_q&milestone=$(forge_urlencode "$opt_milestone")"
     [ -z "$opt_search" ] || gl_q="$gl_q&search=$(forge_urlencode "$opt_search")"
     gl_list=$(gitlab_api_limit "$gl_q" "$opt_limit") || return $?
-    forge_emit_doc "$gl_list" "$GL_ISSUE_DEF [.[] | gl_issue]"
+    if forge_json_mode; then
+        forge_emit_doc "$gl_list" "$GL_ISSUE_DEF [.[] | gl_issue]"
+    else
+        printf '%s\n' "$gl_list" | _jq -r \
+            '.[] | ["#\(.iid)", .title, ((.labels // []) | join(", "))] | @tsv'
+    fi
 }
 
 gitlab_issue_view() {

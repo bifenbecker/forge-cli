@@ -73,6 +73,7 @@ cmd_tag_list() {
         esac
     done
     forge_require_int --limit "$opt_limit"
+    [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     forge_call tag_list
 }
 
@@ -134,7 +135,8 @@ ARGUMENTS
   <name>                 Tag name, e.g. v1.2.0
 
 FLAGS
-  --ref <ref>            Commit SHA, branch or tag to tag; default: the default branch
+  -r, --ref <ref>        Commit SHA, branch or tag to tag (alias: --target); default: the
+                         default branch
   -m, --message <text>   Annotation; makes an annotated tag
 
 OUTPUT

@@ -6,7 +6,7 @@ def gh_branch($default; $web): {
     sha: .commit.sha,
     protected,
     default: (.name == $default),
-    url: ($web + "/tree/" + .name)
+    url: ($web + "/tree/" + (.name | @uri | gsub("%2F"; "/")))
 };
 '
 
@@ -35,14 +35,15 @@ github_branch_list() {
 }
 
 github_branch_view() {
-    gh_branch_doc=$(forge_capture github_api "$FORGE_API/branches/$1") || return $?
+    gh_branch_path=$(github_ref_path "$1")
+    gh_branch_doc=$(forge_capture github_api "$FORGE_API/branches/$gh_branch_path") || return $?
     gh_branch_default=$(github_branch_default) || return $?
     forge_emit_doc "$gh_branch_doc" "$GH_BRANCH_DEF gh_branch(\$default; \$web)" \
         --arg default "$gh_branch_default" --arg web "$(github_web_url)"
 }
 
 github_branch_delete() {
-    forge_capture github_api "$FORGE_API/git/refs/heads/$1" -X DELETE >/dev/null
+    forge_capture github_api "$FORGE_API/git/refs/heads/$(github_ref_path "$1")" -X DELETE >/dev/null
 }
 
 github_branch_protect() {
@@ -54,15 +55,16 @@ github_branch_protect() {
         "restrictions": null,
         "allow_force_pushes": false,
         "allow_deletions": false
-    }' | forge_capture github_api "$FORGE_API/branches/$1/protection" -X PUT --input - >/dev/null
+    }' | forge_capture github_api "$FORGE_API/branches/$(github_ref_path "$1")/protection" -X PUT --input - >/dev/null
 }
 
 github_branch_unprotect() {
+    gh_unprotect_path=$(github_ref_path "$1")
     # "Branch not protected" is a 404 too: tell it from a missing branch by asking first.
-    forge_capture github_api "$FORGE_API/branches/$1" >/dev/null || return $?
+    forge_capture github_api "$FORGE_API/branches/$gh_unprotect_path" >/dev/null || return $?
     gh_unprotect_err=$(forge_tmp)
     gh_unprotect_status=0
-    github_api "$FORGE_API/branches/$1/protection" -X DELETE >/dev/null 2>"$gh_unprotect_err" ||
+    github_api "$FORGE_API/branches/$gh_unprotect_path/protection" -X DELETE >/dev/null 2>"$gh_unprotect_err" ||
         gh_unprotect_status=$?
     if [ "$gh_unprotect_status" -ne 0 ] && ! grep -qi 'not protected' "$gh_unprotect_err"; then
         cat "$gh_unprotect_err" >&2

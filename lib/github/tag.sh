@@ -9,7 +9,7 @@ def gh_tag($web): {
     sha: (if .target.__typename == "Tag" then .target.target.oid else .target.oid end),
     message: (if .target.__typename == "Tag" then (.target.message // "" | sub("\n+$"; "")
         | if . == "" then null else . end) else null end),
-    url: ($web + "/tree/" + .name)
+    url: ($web + "/tree/" + (.name | @uri | gsub("%2F"; "/")))
 };
 '
 
@@ -57,7 +57,7 @@ github_tag_commit() {
         gh_tc_repo=$(forge_capture github_api "$FORGE_API") || return $?
         gh_tc_ref=$(printf '%s\n' "$gh_tc_repo" | _jq -r '.default_branch')
     fi
-    gh_tc_commit=$(forge_capture github_api "$FORGE_API/commits/$gh_tc_ref") || return $?
+    gh_tc_commit=$(forge_capture github_api "$FORGE_API/commits/$(github_ref_path "$gh_tc_ref")") || return $?
     printf '%s\n' "$gh_tc_commit" | _jq -r '.sha'
 }
 
@@ -73,5 +73,5 @@ github_tag_create() {
 }
 
 github_tag_delete() {
-    forge_capture github_api "$FORGE_API/git/refs/tags/$1" -X DELETE >/dev/null
+    forge_capture github_api "$FORGE_API/git/refs/tags/$(github_ref_path "$1")" -X DELETE >/dev/null
 }

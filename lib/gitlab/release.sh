@@ -2,10 +2,11 @@
 
 # GitLab has no drafts or pre-releases: every release is published.
 GL_RELEASE_DEF='
+def blank_null: if . == "" then null else . end;
 def gl_release: {
     tag: .tag_name,
     name,
-    notes: .description,
+    notes: (.description | blank_null),
     url: ._links.self,
     author: .author.username,
     draft: false,
@@ -31,17 +32,18 @@ gitlab_release_path() {
 }
 
 gitlab_release_list() {
-    if ! forge_json_mode; then
+    # glab lists one page of at most 100; past that the text table is built from the API.
+    if ! forge_json_mode && [ "$opt_limit" -le 100 ]; then
         forge_capture glab release list -R "$FORGE_R" --per-page "$opt_limit"
         return
     fi
-    if [ "$opt_limit" -le 100 ]; then
-        gl_rel_list=$(forge_capture gitlab_api "$FORGE_API/releases?per_page=$opt_limit") || return $?
+    gl_rel_list=$(gitlab_api_limit "$FORGE_API/releases?order_by=released_at&sort=desc" "$opt_limit") ||
+        return $?
+    if forge_json_mode; then
+        forge_emit_doc "$gl_rel_list" "$GL_RELEASE_DEF [.[] | gl_release]"
     else
-        gl_rel_list=$(forge_capture gitlab_api_all "$FORGE_API/releases?per_page=100") || return $?
-        gl_rel_list=$(printf '%s\n' "$gl_rel_list" | _jq --argjson n "$opt_limit" '.[:$n]')
+        printf '%s\n' "$gl_rel_list" | _jq -r '.[] | [.tag_name, .name, .released_at] | @tsv'
     fi
-    forge_emit_doc "$gl_rel_list" "$GL_RELEASE_DEF [.[] | gl_release]"
 }
 
 gitlab_release_view() {

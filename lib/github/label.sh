@@ -37,6 +37,7 @@ github_label_edit() {
     printf '%s\n' "$gh_label_doc" | _jq "$GH_LABEL_DEF gh_label"
 }
 
+# REST, not gh label delete: gh puts the name into the path unencoded, so "#" cuts it short.
 github_label_delete() {
-    forge_capture gh label delete "$arg_name" -R "$FORGE_R" --yes >/dev/null
+    forge_capture github_api -X DELETE "$FORGE_API/labels/$(forge_urlencode "$arg_name")" >/dev/null
 }

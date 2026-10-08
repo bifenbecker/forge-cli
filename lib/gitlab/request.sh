@@ -1,6 +1,7 @@
 # shellcheck shell=sh
 
 GL_REQUEST_DEF='
+def blank_null: if . == "" then null else . end;
 def gl_state: if . == "opened" then "open" elif . == "locked" then "open" else . end;
 def gl_request: {
     id: .iid,
@@ -11,7 +12,7 @@ def gl_request: {
     source_branch,
     target_branch,
     url: .web_url,
-    description,
+    description: (.description | blank_null),
     labels: (.labels // []),
     assignees: [(.assignees // [])[].username],
     reviewers: [(.reviewers // [])[].username],
@@ -45,7 +46,8 @@ gitlab_request_url_of() {
 
 gitlab_request_list() {
     gitlab_need_me "$opt_author $opt_assignee"
-    if ! forge_json_mode; then
+    # glab lists one page of at most 100; past that the text table is built from the API.
+    if ! forge_json_mode && [ "$opt_limit" -le 100 ]; then
         set -- mr list -R "$FORGE_R" --per-page "$opt_limit"
         case $opt_state in
             closed) set -- "$@" --closed ;;
@@ -71,7 +73,12 @@ gitlab_request_list() {
     [ -z "$opt_draft" ] || gl_q="$gl_q&wip=yes"
     [ -z "$opt_search" ] || gl_q="$gl_q&search=$(forge_urlencode "$opt_search")"
     gl_list=$(gitlab_api_limit "$gl_q" "$opt_limit") || return $?
-    forge_emit_doc "$gl_list" "$GL_REQUEST_DEF [.[] | gl_request]"
+    if forge_json_mode; then
+        forge_emit_doc "$gl_list" "$GL_REQUEST_DEF [.[] | gl_request]"
+    else
+        printf '%s\n' "$gl_list" | _jq -r \
+            '.[] | ["!\(.iid)", .title, "\(.source_branch) -> \(.target_branch)"] | @tsv'
+    fi
 }
 
 gitlab_request_view() {
@@ -103,16 +110,17 @@ gitlab_request_url() {
     printf '%s\n' "$gl_mr" | _jq -r '.web_url'
 }
 
+gitlab_request_default_branch() {
+    gl_rdb_project=$(forge_capture gitlab_api "$FORGE_API") || return $?
+    printf '%s\n' "$gl_rdb_project" | _jq -r '.default_branch // empty'
+}
+
+# --fill is resolved by forge before this (glab --fill would push), so a title is always given.
 gitlab_request_create() {
     gitlab_need_me "$opt_assignees $opt_reviewers"
     # --yes skips prompts: forge runs unattended.
-    set -- mr create -R "$FORGE_R" --yes --source-branch "$opt_source"
-    if [ -n "$opt_title" ]; then
-        set -- "$@" --title "$opt_title" --description "${FORGE_BODY:-}"
-    else
-        # --fill pushes the branch on glab; gh does not, so the push is switched off.
-        set -- "$@" --fill --push=false
-    fi
+    set -- mr create -R "$FORGE_R" --yes --source-branch "$opt_source" \
+        --title "$opt_title" --description "${FORGE_BODY:-}"
     [ -z "$opt_target" ] || set -- "$@" --target-branch "$opt_target"
     [ -z "$opt_draft" ] || set -- "$@" --draft
     [ -z "$opt_milestone" ] || set -- "$@" --milestone "$opt_milestone"
@@ -144,10 +152,14 @@ EOF
 
 gitlab_request_edit() {
     gitlab_need_me "$opt_add_assignees $opt_remove_assignees $opt_add_reviewers $opt_remove_reviewers"
+    # glab reads an empty value as "not given", so clearing goes through the API.
+    if [ -n "${FORGE_BODY_SET:-}" ] && [ -z "$FORGE_BODY" ]; then
+        forge_capture gitlab_api "$FORGE_API/merge_requests/$1" -X PUT -f description= >/dev/null || return $?
+    fi
     set -- mr update "$1" -R "$FORGE_R" --yes
     gl_edit_base=$#
     [ -z "$opt_title" ] || set -- "$@" --title "$opt_title"
-    [ -z "${FORGE_BODY_SET:-}" ] || set -- "$@" --description "$FORGE_BODY"
+    [ -z "${FORGE_BODY:-}" ] || set -- "$@" --description "$FORGE_BODY"
     [ -z "$opt_target" ] || set -- "$@" --target-branch "$opt_target"
     [ -z "$opt_milestone" ] || set -- "$@" --milestone "$opt_milestone"
     [ -z "$opt_add_labels" ] || set -- "$@" --label "$(forge_list_csv "$opt_add_labels")"
@@ -192,7 +204,9 @@ gitlab_request_merge() {
         --argjson remove "$(gitlab_bool "$opt_delete_branch")" \
         --argjson auto "$(gitlab_bool "$opt_auto")" \
         --arg message "$opt_message" --arg sha "$opt_sha" '
-        {squash: $squash, should_remove_source_branch: $remove, merge_when_pipeline_succeeds: $auto}
+        # auto_merge replaced merge_when_pipeline_succeeds in GitLab 17; older instances know only the latter.
+        {squash: $squash, should_remove_source_branch: $remove, auto_merge: $auto,
+         merge_when_pipeline_succeeds: $auto}
         + (if $message == "" then {} elif $squash then {squash_commit_message: $message}
            else {merge_commit_message: $message} end)
         + (if $sha == "" then {} else {sha: $sha} end)')
@@ -212,7 +226,7 @@ gitlab_request_merge() {
     forge_emit_doc "$gl_merged" '{
         state: (if .state == "opened" then "open" else .state end),
         sha: .merge_commit_sha,
-        auto_merge: (.merge_when_pipeline_succeeds // false)
+        auto_merge: (.auto_merge // .merge_when_pipeline_succeeds // false)
     }'
 }
 
@@ -255,9 +269,16 @@ gitlab_request_approve() {
 # --- checks ------------------------------------------------------------------------------
 
 # The run is the request's head pipeline: pinned to its head commit, not the newest on the branch.
+# From a fork it runs in the source project, so its jobs are read there (gl_pipeline_api).
 gitlab_head_pipeline() {
     gl_mr=$(forge_capture gitlab_api "$FORGE_API/merge_requests/$1") || return $?
     gl_pipeline=$(printf '%s\n' "$gl_mr" | _jq -r '.head_pipeline.id // empty')
+    gl_pipeline_project=$(printf '%s\n' "$gl_mr" | _jq -r '.head_pipeline.project_id // empty')
+    if [ -n "$gl_pipeline_project" ]; then
+        gl_pipeline_api="projects/$gl_pipeline_project"
+    else
+        gl_pipeline_api=$FORGE_API
+    fi
 }
 
 gitlab_request_checks() {
@@ -266,7 +287,7 @@ gitlab_request_checks() {
         forge_emit_doc "$gl_mr" '{status: "none", sha, url: null, jobs: []}'
         return
     fi
-    gl_jobs=$(forge_capture gitlab_api_all "$FORGE_API/pipelines/$gl_pipeline/jobs?per_page=100") || return $?
+    gl_jobs=$(forge_capture gitlab_api_all "$gl_pipeline_api/pipelines/$gl_pipeline/jobs?per_page=100") || return $?
     forge_emit_doc "$gl_mr" '{
         status: (.head_pipeline.status | normalise_status),
         sha: .head_pipeline.sha,
@@ -285,7 +306,7 @@ gitlab_request_checks() {
 gitlab_check_job() {
     gitlab_head_pipeline "$1" || return $?
     [ -n "$gl_pipeline" ] || forge_not_found "request !$1 has no pipeline"
-    gl_jobs=$(forge_capture gitlab_api_all "$FORGE_API/pipelines/$gl_pipeline/jobs?per_page=100") || return $?
+    gl_jobs=$(forge_capture gitlab_api_all "$gl_pipeline_api/pipelines/$gl_pipeline/jobs?per_page=100") || return $?
     gl_job=$(printf '%s\n' "$gl_jobs" |
         _jq -r --arg name "$2" '[.[] | select(.name == $name)] | sort_by(.id) | last | .id // empty')
     [ -n "$gl_job" ] || forge_not_found "pipeline $gl_pipeline has no job named '$2'"
@@ -293,7 +314,7 @@ gitlab_check_job() {
 
 gitlab_request_checks_log() {
     gitlab_check_job "$1" "$2" || return $?
-    forge_capture gitlab_api "$FORGE_API/jobs/$gl_job/trace"
+    forge_capture gitlab_api "$gl_pipeline_api/jobs/$gl_job/trace"
 }
 
 gitlab_request_checks_artifacts() {
@@ -301,7 +322,7 @@ gitlab_request_checks_artifacts() {
     # Job names may hold "/", ":" or spaces; the file name may not.
     gl_archive="$3/$(printf '%s' "$2" | tr '/: []' '_____').zip"
     gl_artifacts_status=0
-    forge_capture gitlab_api "$FORGE_API/jobs/$gl_job/artifacts" >"$gl_archive" || gl_artifacts_status=$?
+    forge_capture gitlab_api "$gl_pipeline_api/jobs/$gl_job/artifacts" >"$gl_archive" || gl_artifacts_status=$?
     if [ "$gl_artifacts_status" -ne 0 ]; then
         rm -f "$gl_archive"
         [ "$gl_artifacts_status" -ne "$FORGE_EXIT_NOT_FOUND" ] || forge_not_found "job '$2' of pipeline $gl_pipeline published no artifacts"
@@ -314,8 +335,10 @@ gitlab_request_checks_artifacts() {
 gitlab_request_comment_list() {
     gl_notes=$(forge_capture gitlab_api_all "$FORGE_API/merge_requests/$1/notes?sort=asc&per_page=100") ||
         return $?
+    # A plain comment turns into a DiscussionNote once someone replies; inline ones carry a position.
     printf '%s\n' "$gl_notes" | _jq --arg url "$(gitlab_request_url_of "$1")" \
-        "$GL_REQUEST_DEF [.[] | select((.system | not) and .type == null) | gl_note(\$url)]"
+        "$GL_REQUEST_DEF [.[] | select((.system | not) and (.type == null or .type == \"DiscussionNote\")
+            and .position == null) | gl_note(\$url)]"
 }
 
 gitlab_request_comment_add() {

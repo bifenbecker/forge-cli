@@ -3,6 +3,7 @@
 GH_REQUEST_FIELDS=number,title,state,isDraft,author,headRefName,baseRefName,url,body,labels,assignees,reviewRequests,headRefOid,createdAt,updatedAt,mergedAt,closedAt,mergeable,latestReviews
 
 GH_REQUEST_DEF='
+def blank_null: if . == "" then null else . end;
 def gh_request: {
     id: .number,
     title,
@@ -12,7 +13,7 @@ def gh_request: {
     source_branch: .headRefName,
     target_branch: .baseRefName,
     url,
-    description: .body,
+    description: (.body | blank_null),
     labels: [.labels[].name],
     assignees: [.assignees[].login],
     # Pending requests plus whoever already reviewed: GitLab keeps both in .reviewers.
@@ -99,13 +100,14 @@ $1
 EOF
 }
 
+github_request_default_branch() {
+    gh_rdb_repo=$(forge_capture github_api "$FORGE_API") || return $?
+    printf '%s\n' "$gh_rdb_repo" | _jq -r '.default_branch'
+}
+
+# --fill is resolved by forge before this, so a title is always given.
 github_request_create() {
-    set -- pr create -R "$FORGE_R" --head "$opt_source"
-    if [ -n "$opt_title" ]; then
-        set -- "$@" --title "$opt_title" --body "${FORGE_BODY:-}"
-    else
-        set -- "$@" --fill
-    fi
+    set -- pr create -R "$FORGE_R" --head "$opt_source" --title "$opt_title" --body "${FORGE_BODY:-}"
     [ -z "$opt_target" ] || set -- "$@" --base "$opt_target"
     [ -z "$opt_draft" ] || set -- "$@" --draft
     [ -z "$opt_milestone" ] || set -- "$@" --milestone "$opt_milestone"
@@ -438,10 +440,5 @@ github_request_label_add() {
 }
 
 github_request_label_remove() {
-    gh_label_id=$1
-    while IFS= read -r gh_label; do
-        [ -z "$gh_label" ] || gh pr edit "$gh_label_id" -R "$FORGE_R" --remove-label "$gh_label" >/dev/null 2>&1 || true
-    done <<EOF
-$2
-EOF
+    github_labels_remove "$1" "$2"
 }

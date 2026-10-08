@@ -86,6 +86,7 @@ cmd_branch_list() {
         esac
     done
     forge_require_int --limit "$opt_limit"
+    [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     forge_call branch_list
 }
 
@@ -182,7 +183,9 @@ PLATFORM NOTES
   GitHub: a classic branch protection rule requiring a pull request with 0 approvals;
           administrators may bypass it. Private repositories need a paid plan.
   GitLab: a protected branch with push "No one", merge "Developers + Maintainers",
-          force push off.
+          force push off. An existing protection is changed in place; where the instance
+          refuses that, it is removed and created anew, and if that creation fails the
+          command warns that the branch is left unprotected and exits 1.
 
 EXAMPLES
   forge branch protect release/1.x

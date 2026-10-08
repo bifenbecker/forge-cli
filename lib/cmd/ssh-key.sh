@@ -49,7 +49,8 @@ DESCRIPTION
   Lists the SSH keys of the account gh or glab is logged in as on the repository's host.
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table on GitHub; on GitLab one key per line, tab-separated:
+        id, title, created_at.
   JSON: array of $SSH_KEY_JSON_SHAPE
 
 PLATFORM NOTES

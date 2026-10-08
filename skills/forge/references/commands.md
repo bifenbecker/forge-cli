@@ -288,7 +288,9 @@ PLATFORM NOTES
   GitHub: a classic branch protection rule requiring a pull request with 0 approvals;
           administrators may bypass it. Private repositories need a paid plan.
   GitLab: a protected branch with push "No one", merge "Developers + Maintainers",
-          force push off.
+          force push off. An existing protection is changed in place; where the instance
+          refuses that, it is removed and created anew, and if that creation fails the
+          command warns that the branch is left unprotected and exits 1.
 
 EXAMPLES
   forge branch protect release/1.x
@@ -663,7 +665,8 @@ FLAGS
   -L, --limit <n>          At most this many runs (default 20)
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one pipeline per line, tab-separated: id, status, ref, created_at.
   JSON: array of {id, name, status, ref, sha, event, url, created_at, updated_at}
   status is success, failed, running, pending, manual, canceled or skipped.
 
@@ -870,7 +873,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>  Name of the key; required
-  -w, --write         Allow the key to push
+  -w, --write         Allow the key to push (aliases: --allow-write, --can-push)
 
 OUTPUT
   Text: the id of the new key.
@@ -920,7 +923,8 @@ DESCRIPTION
   Lists every deploy key of the repository.
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table on GitHub; on GitLab one key per line, tab-separated:
+        id, title, read-only or read-write, created_at.
   JSON: array of {id, title, key, read_only, created_at}
   key is the public key text; read_only is false for a key that may push.
 
@@ -1095,7 +1099,8 @@ OUTPUT
   JSON: the new issue, as forge issue view --json:
         {id, title, state, author, url, description, labels[], assignees[],
          milestone, created_at, updated_at, closed_at}
-  state is open or closed. milestone is the milestone title, or null.
+  state is open or closed. milestone is the milestone title, or null. description is null
+  when empty.
 
 EXAMPLES
   forge issue create --title "Login times out" --body "Steps: ..." --label bug
@@ -1120,7 +1125,7 @@ ARGUMENTS
   <id>    Issue number
 
 FLAGS
-  --yes   Confirm the deletion
+  -y, --yes  Confirm the deletion
 
 OUTPUT
   Text: the id of the deleted issue.
@@ -1168,7 +1173,8 @@ OUTPUT
   JSON: the issue after the change, as forge issue view --json:
         {id, title, state, author, url, description, labels[], assignees[],
          milestone, created_at, updated_at, closed_at}
-  state is open or closed. milestone is the milestone title, or null.
+  state is open or closed. milestone is the milestone title, or null. description is null
+  when empty.
 
 EXAMPLES
   forge issue edit 7 --title "Login times out after 30s"
@@ -1265,19 +1271,21 @@ DESCRIPTION
   flags mean the issue carries all of them. Pull and merge requests are never included.
 
 FLAGS
-  --state <state>       open (default), closed or all
-  -L, --limit <n>       At most this many issues (default 30)
-  --author <user>       Opened by this user; @me for yourself
-  --assignee <user>     Assigned to this user; @me for yourself
-  --label <name>        Carrying this label; repeat for several
-  --milestone <title>   In the milestone with this title
-  --search <text>       Free-text search in title and description
+  -s, --state <state>      open (default), closed or all
+  -L, --limit <n>          At most this many issues (default 30)
+  -A, --author <user>      Opened by this user; @me for yourself
+  -a, --assignee <user>    Assigned to this user; @me for yourself
+  -l, --label <name>       Carrying this label; repeat for several
+  -m, --milestone <title>  In the milestone with this title
+  -S, --search <text>      Free-text search in title and description
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one issue per line, tab-separated: #id, title, labels.
   JSON: array of {id, title, state, author, url, description, labels[], assignees[],
          milestone, created_at, updated_at, closed_at}
-  state is open or closed. milestone is the milestone title, or null.
+  state is open or closed. milestone is the milestone title, or null. description is null
+  when empty.
 
 PLATFORM NOTES
   GitHub: --search takes GitHub search syntax too (e.g. "no:assignee sort:updated-desc").
@@ -1333,14 +1341,15 @@ ARGUMENTS
   <id>          Issue number
 
 FLAGS
-  --comments    Text mode: include the comments
-  --web         Open the issue in the browser instead
+  -c, --comments  Text mode: include the comments
+  -w, --web       Open the issue in the browser instead
 
 OUTPUT
   Text: the platform CLI's view.
   JSON: {id, title, state, author, url, description, labels[], assignees[],
          milestone, created_at, updated_at, closed_at}
-  state is open or closed. milestone is the milestone title, or null.
+  state is open or closed. milestone is the milestone title, or null. description is null
+  when empty.
 
 PLATFORM NOTES
   GitHub: a pull request number is accepted too and shows the pull request (url has /pull/).
@@ -1690,13 +1699,13 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     Title; default: the tag
-  -b, --body <text>      Release notes (alias: --notes); default: empty
+  -b, --body <text>      Release notes (alias: -n, --notes); default: empty
   -F, --body-file <path|->
                          Release notes from a file, or - for stdin (alias: --notes-file)
   --target <ref>         Branch or commit SHA to tag when <tag> does not exist;
                          default: the default branch. Ignored when the tag exists.
-  --draft                Save as an unpublished draft (GitHub only)
-  --prerelease           Mark as a pre-release (GitHub only)
+  -d, --draft            Save as an unpublished draft (GitHub only)
+  -p, --prerelease       Mark as a pre-release (GitHub only)
 
 OUTPUT
   Text: the URL of the release.
@@ -1729,7 +1738,7 @@ ARGUMENTS
   <tag>           Tag of the release
 
 FLAGS
-  --cleanup-tag   Also delete the tag on the remote
+  --cleanup-tag   Also delete the tag on the remote (alias: --with-tag)
 
 OUTPUT
   Text: nothing.
@@ -1790,7 +1799,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     New title
-  -b, --body <text>      New release notes, replacing the old (alias: --notes)
+  -b, --body <text>      New release notes, replacing the old (alias: -n, --notes)
   -F, --body-file <path|->
                          New release notes from a file, or - for stdin (alias: --notes-file)
   --draft                Turn back into a draft (GitHub only)
@@ -1827,8 +1836,8 @@ OUTPUT
   Text: its tag, e.g. v1.2.0
   JSON: {tag, name, notes, url, author, draft, prerelease, created_at, published_at,
          assets: [{name, url}]}
-  url is the release page; assets[].url downloads the file. GitLab has no drafts or
-  pre-releases: draft is always false and prerelease always null there.
+  notes is null when empty. url is the release page; assets[].url downloads the file. GitLab
+  has no drafts or pre-releases: draft is always false and prerelease always null there.
 
 PLATFORM NOTES
   GitHub: the release marked "Latest"; drafts and pre-releases never are.
@@ -1855,11 +1864,12 @@ FLAGS
   -L, --limit <n>   At most this many releases (default 30)
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one release per line, tab-separated: tag, name, released_at.
   JSON: array of {tag, name, notes, url, author, draft, prerelease, created_at, published_at,
          assets: [{name, url}]}
-  url is the release page; assets[].url downloads the file. GitLab has no drafts or
-  pre-releases: draft is always false and prerelease always null there.
+  notes is null when empty. url is the release page; assets[].url downloads the file. GitLab
+  has no drafts or pre-releases: draft is always false and prerelease always null there.
 
 PLATFORM NOTES
   GitHub: drafts are listed too (to users who can see them); newest by creation date.
@@ -1891,7 +1901,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>     Title; default on creation: the tag; on update: unchanged
-  -b, --body <text>      Release notes (alias: --notes); on update, unchanged when omitted
+  -b, --body <text>      Release notes (alias: -n, --notes); on update, unchanged when omitted
   -F, --body-file <path|->
                          Release notes from a file, or - for stdin (alias: --notes-file)
 
@@ -1957,8 +1967,8 @@ OUTPUT
   Text: the platform CLI's view.
   JSON: {tag, name, notes, url, author, draft, prerelease, created_at, published_at,
          assets: [{name, url}]}
-  url is the release page; assets[].url downloads the file. GitLab has no drafts or
-  pre-releases: draft is always false and prerelease always null there.
+  notes is null when empty. url is the release page; assets[].url downloads the file. GitLab
+  has no drafts or pre-releases: draft is always false and prerelease always null there.
 
 EXAMPLES
   forge release view v1.2.0
@@ -1983,7 +1993,7 @@ ARGUMENTS
   <repo>   Repository to archive: OWNER/REPO, HOST/OWNER/REPO or a URL
 
 FLAGS
-  --yes    Confirm; without it the command exits 2 and changes nothing
+  -y, --yes  Confirm; without it the command exits 2 and changes nothing
 
 OUTPUT
   Text: the web URL of the repository.
@@ -2081,10 +2091,10 @@ ARGUMENTS
                          GROUP/SUBGROUP/NAME on GitLab)
 
 FLAGS
-  --public               Visible to everyone
-  --private              Visible only to members
-  --internal             Visible to every signed-in user of the instance or enterprise
-  --description <text>   Description
+  --public                  Visible to everyone
+  --private                 Visible only to members
+  --internal                Visible to every signed-in user of the instance or enterprise
+  -d, --description <text>  Description
 
 OUTPUT
   Text: the web URL of the new repository.
@@ -2118,7 +2128,7 @@ ARGUMENTS
   <repo>   Repository to delete: OWNER/REPO, HOST/OWNER/REPO or a URL
 
 FLAGS
-  --yes    Confirm the deletion; without it the command exits 2 and deletes nothing
+  -y, --yes  Confirm the deletion; without it the command exits 2 and deletes nothing
 
 OUTPUT
   Text: nothing.
@@ -2272,7 +2282,7 @@ ARGUMENTS
   <repo>   Repository to show; default: the current one (or --repo)
 
 FLAGS
-  --web    Open the repository in the browser instead
+  -w, --web  Open the repository in the browser instead
 
 OUTPUT
   Text: the platform CLI's view (description and README).
@@ -2304,9 +2314,9 @@ ARGUMENTS
   <id>                   Request number; default: the open request of the current branch
 
 FLAGS
-  --body <text>          Comment to go with the approval
-  --body-file <path|->   The comment from a file, or - for stdin
-  --sha <commit>         Approve only if the head is still this commit (GitLab)
+  -b, --body <text>         Comment to go with the approval
+  -F, --body-file <path|->  The comment from a file, or - for stdin
+  --sha <commit>            Approve only if the head is still this commit (GitLab)
 
 OUTPUT
   Text: the URL of the request.
@@ -2337,7 +2347,7 @@ ARGUMENTS
   <id>              Request number
 
 FLAGS
-  --branch <name>   Local branch name; default: the source branch name
+  -b, --branch <name>  Local branch name; default: the source branch name
 
 OUTPUT
   Text: the platform CLI's progress. No JSON.
@@ -2408,8 +2418,8 @@ ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --comment <text>   Comment to leave before closing
-  --delete-branch    Also delete the source branch on the remote
+  -c, --comment <text>  Comment to leave before closing
+  -d, --delete-branch   Also delete the source branch on the remote
 
 OUTPUT
   Text: the URL of the request.
@@ -2435,8 +2445,8 @@ ARGUMENTS
   <id>                   Request number; default: the open request of the current branch
 
 FLAGS
-  --body <text>          Comment text (Markdown)
-  --body-file <path|->   Comment text from a file, or - for stdin
+  -b, --body <text>         Comment text (Markdown)
+  -F, --body-file <path|->  Comment text from a file, or - for stdin
 
 OUTPUT
   Text: the comment id.
@@ -2465,8 +2475,8 @@ ARGUMENTS
   <comment-id>           Comment id from 'forge request comment list'
 
 FLAGS
-  --body <text>          New text
-  --body-file <path|->   New text from a file, or - for stdin
+  -b, --body <text>         New text
+  -F, --body-file <path|->  New text from a file, or - for stdin
 
 OUTPUT
   Text: the comment id.
@@ -2495,8 +2505,8 @@ ARGUMENTS
   <line>                 Line number in the new version of the file
 
 FLAGS
-  --body <text>          Comment text (Markdown; may contain a suggestion fence)
-  --body-file <path|->   Comment text from a file, or - for stdin
+  -b, --body <text>         Comment text (Markdown; may contain a suggestion fence)
+  -F, --body-file <path|->  Comment text from a file, or - for stdin
 
 OUTPUT
   Text: the thread id.
@@ -2556,18 +2566,22 @@ DESCRIPTION
   for the same source branch.
 
 FLAGS
-  --title <text>          Title; required unless --fill
-  --body <text>           Description
-  --body-file <path|->    Description from a file, or - for stdin
-  --target <branch>       Branch to merge into; default: the repository default branch
-  --source <branch>       Branch to merge from; default: the current branch
-  --draft                 Open as a draft
-  --assignee <user>       Assign; @me for yourself; repeatable
-  --reviewer <user>       Ask for review; repeatable
-  --label <name>          Add a label; repeatable
-  --milestone <name>      Put in a milestone
-  --delete-branch         Delete the source branch when merged
-  --fill                  Take title and description from the commits
+  -t, --title <text>        Title; required unless --fill
+  -b, --body <text>         Description
+  -F, --body-file <path|->  Description from a file, or - for stdin
+  --target <branch>         Branch to merge into (alias: --base); default: the repository
+                            default branch
+  --source <branch>         Branch to merge from (alias: --head); default: the current branch
+  --draft                   Open as a draft
+  --assignee <user>         Assign; @me for yourself; repeatable
+  --reviewer <user>         Ask for review; repeatable
+  --label <name>            Add a label; repeatable
+  --milestone <name>        Put in a milestone
+  --delete-branch           Delete the source branch when merged
+  --fill                    Take title and description, when not given, from the commits
+                            between <remote>/<target> and the source branch: one commit
+                            gives its subject and body; several give the branch name and
+                            a list of their subjects. Reads the local clone and pushes nothing.
 
 OUTPUT
   Text: the URL of the new request.
@@ -2630,10 +2644,10 @@ ARGUMENTS
   <id>                       Request number; default: the open request of the current branch
 
 FLAGS
-  --title <text>             New title
-  --body <text>              New description
-  --body-file <path|->       New description from a file, or - for stdin
-  --target <branch>          New target branch
+  -t, --title <text>         New title
+  -b, --body <text>          New description
+  -F, --body-file <path|->   New description from a file, or - for stdin
+  --target <branch>          New target branch (alias: --base)
   --milestone <name>         Move to this milestone
   --add-label <name>         Add a label; repeatable
   --remove-label <name>      Remove a label; repeatable
@@ -2803,11 +2817,13 @@ FLAGS
   --search <text>      Free-text search in title and description
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one request per line, tab-separated: !id, title, source -> target.
   JSON: array of {id, title, state, draft, author, source_branch, target_branch, url,
          description, labels[], assignees[], reviewers[], sha, created_at, updated_at,
          merged_at, closed_at, mergeable}
   state is open, closed or merged. mergeable is true, false or null (not yet known).
+  description is null when empty.
 
 PLATFORM NOTES
   GitHub: --state closed excludes merged requests, as on GitLab.
@@ -2837,14 +2853,14 @@ ARGUMENTS
   <id>               Request number; default: the open request of the current branch
 
 FLAGS
-  --squash           Squash all commits into one
-  --merge            Create a merge commit
-  --rebase           Rebase the commits onto the target (GitHub only)
-  --delete-branch    Delete the source branch after merging
-  --sha <commit>     Merge only if the head is still this commit
-  --message <text>   Commit message of the squash or merge commit; the first line is the
-                     subject, the rest after a blank line the body
-  --auto             Merge automatically once required checks pass
+  --squash              Squash all commits into one
+  --merge               Create a merge commit
+  --rebase              Rebase the commits onto the target (GitHub only)
+  -d, --delete-branch   Delete the source branch after merging
+  --sha <commit>        Merge only if the head is still this commit
+  -m, --message <text>  Commit message of the squash or merge commit; the first line is the
+                        subject, the rest after a blank line the body
+  --auto                Merge automatically once required checks pass
 
 OUTPUT
   Text and JSON: {state, sha, auto_merge}
@@ -3093,8 +3109,8 @@ ARGUMENTS
   <thread-id>            Thread id from 'forge request thread list'
 
 FLAGS
-  --body <text>          Reply text
-  --body-file <path|->   Reply text from a file, or - for stdin
+  -b, --body <text>         Reply text
+  -F, --body-file <path|->  Reply text from a file, or - for stdin
 
 OUTPUT
   Text: the id of the new reply.
@@ -3200,6 +3216,7 @@ OUTPUT
          description, labels[], assignees[], reviewers[], sha, created_at, updated_at,
          merged_at, closed_at, mergeable}
   state is open, closed or merged. mergeable is true, false or null (not yet known).
+  description is null when empty.
         plus approved (bool), approved_by[] (users who approved), decision
         (approved, changes_requested, review_required, or null where the host has no verdict).
 
@@ -3430,7 +3447,8 @@ DESCRIPTION
   Lists the SSH keys of the account gh or glab is logged in as on the repository's host.
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table on GitHub; on GitLab one key per line, tab-separated:
+        id, title, created_at.
   JSON: array of {id, title, key, created_at}
   key is the public key text.
 
@@ -3462,7 +3480,8 @@ ARGUMENTS
   <name>                 Tag name, e.g. v1.2.0
 
 FLAGS
-  --ref <ref>            Commit SHA, branch or tag to tag; default: the default branch
+  -r, --ref <ref>        Commit SHA, branch or tag to tag (alias: --target); default: the
+                         default branch
   -m, --message <text>   Annotation; makes an annotated tag
 
 OUTPUT

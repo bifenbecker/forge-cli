@@ -43,6 +43,15 @@ repo_target() {
     fi
 }
 
+# Destructive commands take only a full path: GitLab reads a bare number as a project id, and a
+# bare name would be completed with whatever owner the CLI guesses.
+repo_require_full() {
+    case $1 in
+        */*) ;;
+        *) forge_usage_die "<repo> must be OWNER/REPO, HOST/OWNER/REPO or a URL, got '$1'" ;;
+    esac
+}
+
 # list and create need only a host. Outside a checkout detection would stop at the missing
 # remote, so a placeholder path lets it fall back to the default host.
 repo_require_name() {
@@ -68,7 +77,7 @@ ARGUMENTS
   <repo>   Repository to show; default: the current one (or --repo)
 
 FLAGS
-  --web    Open the repository in the browser instead
+  -w, --web  Open the repository in the browser instead
 
 OUTPUT
   Text: the platform CLI's view (description and README).
@@ -286,10 +295,10 @@ ARGUMENTS
                          GROUP/SUBGROUP/NAME on GitLab)
 
 FLAGS
-  --public               Visible to everyone
-  --private              Visible only to members
-  --internal             Visible to every signed-in user of the instance or enterprise
-  --description <text>   Description
+  --public                  Visible to everyone
+  --private                 Visible only to members
+  --internal                Visible to every signed-in user of the instance or enterprise
+  -d, --description <text>  Description
 
 OUTPUT
   Text: the web URL of the new repository.
@@ -347,7 +356,7 @@ ARGUMENTS
   <repo>   Repository to delete: OWNER/REPO, HOST/OWNER/REPO or a URL
 
 FLAGS
-  --yes    Confirm the deletion; without it the command exits 2 and deletes nothing
+  -y, --yes  Confirm the deletion; without it the command exits 2 and deletes nothing
 
 OUTPUT
   Text: nothing.
@@ -372,6 +381,7 @@ cmd_repo_delete() {
         esac
     done
     [ -n "$arg_repo" ] || forge_usage_die "<repo> is required"
+    repo_require_full "$arg_repo"
     [ -n "$opt_yes" ] || forge_usage_die "deleting $arg_repo cannot be undone: pass --yes to confirm"
     repo_target "$arg_repo"
     forge_call repo_delete
@@ -396,7 +406,7 @@ ARGUMENTS
   <repo>   Repository to archive: OWNER/REPO, HOST/OWNER/REPO or a URL
 
 FLAGS
-  --yes    Confirm; without it the command exits 2 and changes nothing
+  -y, --yes  Confirm; without it the command exits 2 and changes nothing
 
 OUTPUT
   Text: the web URL of the repository.
@@ -422,6 +432,7 @@ cmd_repo_archive() {
         esac
     done
     [ -n "$arg_repo" ] || forge_usage_die "<repo> is required"
+    repo_require_full "$arg_repo"
     [ -n "$opt_yes" ] || forge_usage_die "archiving $arg_repo makes it read-only: pass --yes to confirm"
     repo_target "$arg_repo"
     forge_call repo_archive

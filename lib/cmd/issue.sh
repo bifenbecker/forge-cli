@@ -3,7 +3,8 @@
 
 ISSUE_JSON_SHAPE='{id, title, state, author, url, description, labels[], assignees[],
          milestone, created_at, updated_at, closed_at}
-  state is open or closed. milestone is the milestone title, or null.'
+  state is open or closed. milestone is the milestone title, or null. description is null
+  when empty.'
 
 help_issue() {
     cat <<'EOF'
@@ -58,16 +59,17 @@ DESCRIPTION
   flags mean the issue carries all of them. Pull and merge requests are never included.
 
 FLAGS
-  --state <state>       open (default), closed or all
-  -L, --limit <n>       At most this many issues (default 30)
-  --author <user>       Opened by this user; @me for yourself
-  --assignee <user>     Assigned to this user; @me for yourself
-  --label <name>        Carrying this label; repeat for several
-  --milestone <title>   In the milestone with this title
-  --search <text>       Free-text search in title and description
+  -s, --state <state>      open (default), closed or all
+  -L, --limit <n>          At most this many issues (default 30)
+  -A, --author <user>      Opened by this user; @me for yourself
+  -a, --assignee <user>    Assigned to this user; @me for yourself
+  -l, --label <name>       Carrying this label; repeat for several
+  -m, --milestone <title>  In the milestone with this title
+  -S, --search <text>      Free-text search in title and description
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table. On GitLab with --limit above 100 (one glab page), forge's
+        own: one issue per line, tab-separated: #id, title, labels.
   JSON: array of $ISSUE_JSON_SHAPE
 
 PLATFORM NOTES
@@ -120,8 +122,8 @@ ARGUMENTS
   <id>          Issue number
 
 FLAGS
-  --comments    Text mode: include the comments
-  --web         Open the issue in the browser instead
+  -c, --comments  Text mode: include the comments
+  -w, --web       Open the issue in the browser instead
 
 OUTPUT
   Text: the platform CLI's view.
@@ -383,7 +385,7 @@ ARGUMENTS
   <id>    Issue number
 
 FLAGS
-  --yes   Confirm the deletion
+  -y, --yes  Confirm the deletion
 
 OUTPUT
   Text: the id of the deleted issue.

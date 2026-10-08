@@ -48,7 +48,8 @@ DESCRIPTION
   Lists every deploy key of the repository.
 
 OUTPUT
-  Text: the platform CLI's table.
+  Text: the platform CLI's table on GitHub; on GitLab one key per line, tab-separated:
+        id, title, read-only or read-write, created_at.
   JSON: array of $DEPLOY_KEY_JSON_SHAPE
 
 PLATFORM NOTES
@@ -84,7 +85,7 @@ ARGUMENTS
 
 FLAGS
   -t, --title <text>  Name of the key; required
-  -w, --write         Allow the key to push
+  -w, --write         Allow the key to push (aliases: --allow-write, --can-push)
 
 OUTPUT
   Text: the id of the new key.

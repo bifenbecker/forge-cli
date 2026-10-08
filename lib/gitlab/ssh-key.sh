@@ -3,12 +3,13 @@
 GL_SSH_KEY_DEF='def gl_ssh_key: {id, title, key, created_at};'
 
 gitlab_ssh_key_list() {
-    if ! forge_json_mode; then
-        forge_capture glab ssh-key list -R "$FORGE_R"
-        return
-    fi
     gl_sk_doc=$(forge_capture gitlab_api_all "user/keys?per_page=100") || return $?
-    forge_emit_doc "$gl_sk_doc" "$GL_SSH_KEY_DEF [.[] | gl_ssh_key]"
+    if forge_json_mode; then
+        forge_emit_doc "$gl_sk_doc" "$GL_SSH_KEY_DEF [.[] | gl_ssh_key]"
+    else
+        # glab prints no ids without --show-id and stops at one page of 30 keys.
+        printf '%s\n' "$gl_sk_doc" | _jq -r '.[] | [.id, .title, .created_at] | @tsv'
+    fi
 }
 
 gitlab_ssh_key_add() {
