@@ -1,0 +1,4 @@
+# forge is many files sharing globals and sourcing each other by computed paths,
+# so cross-file checks only produce noise here.
+shell=sh
+disable=SC1090,SC1091,SC2016,SC2034,SC2153,SC2154

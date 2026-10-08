@@ -1,0 +1,22 @@
+#!/bin/sh
+# forge: one command line for GitHub and GitLab.
+set -eu
+
+if [ -z "${FORGE_HOME:-}" ]; then
+    case $0 in
+        */*) forge_bin_dir=$(dirname -- "$0") ;;
+        *) forge_bin_dir=$(dirname -- "$(command -v -- "$0")") ;;
+    esac
+    FORGE_HOME=$(CDPATH='' cd -- "$forge_bin_dir/.." && pwd)
+fi
+export FORGE_HOME
+
+. "$FORGE_HOME/lib/core/util.sh"
+. "$FORGE_HOME/lib/core/json.sh"
+. "$FORGE_HOME/lib/core/detect.sh"
+. "$FORGE_HOME/lib/core/args.sh"
+. "$FORGE_HOME/lib/core/help.sh"
+. "$FORGE_HOME/lib/core/dispatch.sh"
+. "$FORGE_HOME/lib/cmd/core.sh"
+
+forge_main "$@"
