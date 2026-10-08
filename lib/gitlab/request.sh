@@ -41,16 +41,6 @@ gitlab_request_url_of() {
     printf '%s/-/merge_requests/%s' "$(gitlab_web_url)" "$1"
 }
 
-# GET a list endpoint with at most $2 items, following pages past 100.
-gitlab_api_limit() {
-    if [ "$2" -le 100 ]; then
-        forge_capture gitlab_api "$1&per_page=$2"
-    else
-        gl_limit_doc=$(forge_capture gitlab_api_all "$1&per_page=100") || return $?
-        printf '%s\n' "$gl_limit_doc" | _jq --argjson n "$2" '.[:$n]'
-    fi
-}
-
 
 
 gitlab_request_list() {

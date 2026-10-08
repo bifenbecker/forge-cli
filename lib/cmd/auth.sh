@@ -46,5 +46,6 @@ EOF
 
 cmd_auth_status() {
     [ $# -eq 0 ] || forge_unexpected "$1"
+    forge_host_only
     forge_call auth_status
 }

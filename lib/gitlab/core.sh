@@ -57,3 +57,13 @@ $1
 EOF2
     forge_list_csv "$gl_users"
 }
+
+# GET a list endpoint ("path?query") with at most $2 items, following pages past 100.
+gitlab_api_limit() {
+    if [ "$2" -le 100 ]; then
+        forge_capture gitlab_api "$1&per_page=$2"
+    else
+        gl_limit_doc=$(forge_capture gitlab_api_all "$1&per_page=100") || return $?
+        printf '%s\n' "$gl_limit_doc" | _jq --argjson n "$2" '.[:$n]'
+    fi
+}

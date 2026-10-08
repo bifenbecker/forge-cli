@@ -157,3 +157,12 @@ forge_call() {
     command -v "${FORGE_PLATFORM}_$forge_call_name" >/dev/null 2>&1 || forge_unsupported
     "${FORGE_PLATFORM}_$forge_call_name" "$@"
 }
+
+# For commands about the user or the host rather than a repository (user me, auth status,
+# ssh-key, repo list): outside a checkout they need no --repo. The placeholder path stands in;
+# the platform then comes from FORGE_PLATFORM, else GitHub.
+forge_host_only() {
+    [ -z "${FORGE_REPO_FLAG:-}" ] || return 0
+    git remote get-url "$(forge_remote_name)" >/dev/null 2>&1 && return 0
+    FORGE_REPO_FLAG=_/_
+}

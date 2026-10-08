@@ -10,20 +10,11 @@ def gl_label: {
 '
 
 # GET a list endpoint with at most $2 items, following pages past 100.
-gitlab_label_api_limit() {
-    if [ "$2" -le 100 ]; then
-        forge_capture gitlab_api "$1&per_page=$2"
-    else
-        gl_label_limit_doc=$(forge_capture gitlab_api_all "$1&per_page=100") || return $?
-        printf '%s\n' "$gl_label_limit_doc" | _jq --argjson n "$2" '.[:$n]'
-    fi
-}
-
 gitlab_label_list() {
     # glab label list has no search, so both modes read the API.
     gl_label_q="$FORGE_API/labels?include_ancestor_groups=true"
     [ -z "$opt_search" ] || gl_label_q="$gl_label_q&search=$(forge_urlencode "$opt_search")"
-    gl_label_list=$(gitlab_label_api_limit "$gl_label_q" "$opt_limit") || return $?
+    gl_label_list=$(gitlab_api_limit "$gl_label_q" "$opt_limit") || return $?
     if forge_json_mode; then
         forge_emit_doc "$gl_label_list" "$GL_LABEL_DEF [.[] | gl_label]"
     else

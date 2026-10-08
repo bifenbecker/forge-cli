@@ -75,6 +75,11 @@ forge_capture() {
     }
     forge_capture_status=$?
     cat "$forge_capture_err" >&2
+    # GitHub answers 404 to a token without the needed scope: a failure, not "not found".
+    if grep -qi 'needs the .* scope' "$forge_capture_err"; then
+        rm -f "$forge_capture_err"
+        return "$FORGE_EXIT_ERROR"
+    fi
     if grep -qiE 'not found|404|could not resolve to|no .* found|does not exist' "$forge_capture_err"; then
         rm -f "$forge_capture_err"
         return "$FORGE_EXIT_NOT_FOUND"

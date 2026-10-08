@@ -75,5 +75,6 @@ cmd_api() {
     case $arg_endpoint in
         -*) forge_usage_die "<endpoint> comes first, got the flag '$arg_endpoint'" ;;
     esac
+    forge_host_only
     forge_call api_call "$@"
 }

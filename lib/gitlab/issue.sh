@@ -24,15 +24,6 @@ gitlab_issue_url_of() {
 }
 
 # GET a list endpoint with at most $2 items, following pages past 100.
-gitlab_issue_api_limit() {
-    if [ "$2" -le 100 ]; then
-        forge_capture gitlab_api "$1&per_page=$2"
-    else
-        gl_limit_doc=$(forge_capture gitlab_api_all "$1&per_page=100") || return $?
-        printf '%s\n' "$gl_limit_doc" | _jq --argjson n "$2" '.[:$n]'
-    fi
-}
-
 gitlab_issue_list() {
     gitlab_need_me "$opt_author $opt_assignee"
     if ! forge_json_mode; then
@@ -60,7 +51,7 @@ gitlab_issue_list() {
     [ -z "$opt_labels" ] || gl_q="$gl_q&labels=$(forge_urlencode "$(forge_list_csv "$opt_labels")")"
     [ -z "$opt_milestone" ] || gl_q="$gl_q&milestone=$(forge_urlencode "$opt_milestone")"
     [ -z "$opt_search" ] || gl_q="$gl_q&search=$(forge_urlencode "$opt_search")"
-    gl_list=$(gitlab_issue_api_limit "$gl_q" "$opt_limit") || return $?
+    gl_list=$(gitlab_api_limit "$gl_q" "$opt_limit") || return $?
     forge_emit_doc "$gl_list" "$GL_ISSUE_DEF [.[] | gl_issue]"
 }
 

@@ -45,12 +45,6 @@ repo_target() {
 
 # list and create need only a host. Outside a checkout detection would stop at the missing
 # remote, so a placeholder path lets it fall back to the default host.
-repo_host_only() {
-    [ -z "$FORGE_REPO_FLAG" ] || return 0
-    git remote get-url "$(forge_remote_name)" >/dev/null 2>&1 && return 0
-    FORGE_REPO_FLAG=_/_
-}
-
 repo_require_name() {
     case $2 in
         '' | */ | /* | *//*) forge_usage_die "$1 must be [OWNER/]NAME, got '$2'" ;;
@@ -154,7 +148,7 @@ cmd_repo_list() {
     forge_require_int --limit "$opt_limit"
     [ "$opt_limit" -gt 0 ] || forge_usage_die "--limit must be at least 1"
     [ -z "$opt_visibility" ] || forge_require_one_of --visibility "$opt_visibility" public private internal
-    repo_host_only
+    forge_host_only
     forge_call repo_list
 }
 
@@ -331,7 +325,7 @@ cmd_repo_create() {
     [ -n "$arg_name" ] || forge_usage_die "<name> is required"
     repo_require_name "<name>" "$arg_name"
     [ -n "$opt_visibility" ] || forge_usage_die "a visibility is required: --public, --private or --internal"
-    repo_host_only
+    forge_host_only
     forge_call repo_create
 }
 

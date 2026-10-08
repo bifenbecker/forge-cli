@@ -66,6 +66,7 @@ EOF
 
 cmd_ssh_key_list() {
     [ $# -eq 0 ] || forge_unexpected "$1"
+    forge_host_only
     forge_call ssh_key_list
 }
 
@@ -116,6 +117,7 @@ cmd_ssh_key_add() {
     [ -n "$arg_keyfile" ] || forge_usage_die "<keyfile> is required"
     [ -n "$opt_title" ] || forge_usage_die "--title is required"
     ssh_key_read "$arg_keyfile"
+    forge_host_only
     forge_call ssh_key_add
 }
 
@@ -157,5 +159,6 @@ cmd_ssh_key_delete() {
     done
     [ -n "$arg_id" ] || forge_usage_die "<id> is required"
     forge_require_int "<id>" "$arg_id"
+    forge_host_only
     forge_call ssh_key_delete "$arg_id"
 }

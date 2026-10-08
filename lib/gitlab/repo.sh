@@ -20,15 +20,6 @@ gitlab_repo_emit() {
 }
 
 # GET a list endpoint with at most $2 items, following pages past 100.
-gitlab_repo_api_limit() {
-    if [ "$2" -le 100 ]; then
-        forge_capture gitlab_api "$1&per_page=$2"
-    else
-        gl_repo_limit_doc=$(forge_capture gitlab_api_all "$1&per_page=100") || return $?
-        printf '%s\n' "$gl_repo_limit_doc" | _jq --argjson n "$2" '.[:$n]'
-    fi
-}
-
 gitlab_repo_view() {
     if ! forge_json_mode; then
         # glab repo view takes the project as an argument, not -R.
@@ -55,7 +46,7 @@ gitlab_repo_list() {
     fi
     gl_repo_q="$gl_repo_q&order_by=created_at&sort=desc"
     [ -z "$opt_visibility" ] || gl_repo_q="$gl_repo_q&visibility=$opt_visibility"
-    gl_repo_list=$(gitlab_repo_api_limit "$gl_repo_q" "$opt_limit") || return $?
+    gl_repo_list=$(gitlab_api_limit "$gl_repo_q" "$opt_limit") || return $?
     if forge_json_mode; then
         forge_emit_doc "$gl_repo_list" "$GL_REPO_DEF [.[] | gl_repo]"
     else

@@ -41,5 +41,6 @@ EOF
 
 cmd_user_me() {
     [ $# -eq 0 ] || forge_unexpected "$1"
+    forge_host_only
     forge_call user_me
 }
