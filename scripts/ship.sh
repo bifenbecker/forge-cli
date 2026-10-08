@@ -44,8 +44,8 @@ COMPOSE_MODEL=sonnet
 READ_ONLY_GIT='Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(git rev-parse:*),Bash(git status:*)'
 # Flags that would let a read-only git command write files or run programs.
 DENIED_GIT='Bash(git * --output*),Bash(git * -o *),Bash(git * --ext-diff*),Bash(git * --textconv*),Bash(git * --upload-pack*),Bash(git fetch:*)'
-REVIEW_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(mkdir -p .tmp/review),Write(.tmp/review/**)"
-COMPOSE_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(sh bin/forge request template:*),Bash(mkdir -p .tmp/request),Write(.tmp/request/**)"
+REVIEW_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(mkdir -p .tmp/review),Edit(.tmp/review/**)"
+COMPOSE_TOOLS="Read,Glob,Grep,Skill,$READ_ONLY_GIT,Bash(sh scripts/workflow.sh:*),Bash(sh bin/forge request template:*),Bash(mkdir -p .tmp/request),Edit(.tmp/request/**)"
 
 BASE=
 DRY_RUN=
