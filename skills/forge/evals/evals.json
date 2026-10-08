@@ -1,0 +1,17 @@
+{
+  "skill_name": "forge",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "In the git repository at ./sandbox, pull request #6 was merged recently. Summarise its review threads (who wrote what, and whether each is resolved) and say whether its CI checks passed overall and which failed. Write the summary to outputs/summary.md.",
+      "expected_output": "A summary listing the inline thread on forge-check.txt line 2 with its reply and resolution state, and the checks status with failed job names; obtained through forge with --json.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "In the git repository at ./sandbox, find the most recent CI run on main that did not succeed, list its failed jobs, and save the job names plus the last 30 lines of the first failed job's log to outputs/ci.md. Do not change anything in the repository.",
+      "expected_output": "outputs/ci.md naming the run, its failed jobs and a log tail; obtained through forge ci run list/job list/job log.",
+      "files": []
+    }
+  ]
+}
