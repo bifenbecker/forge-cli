@@ -31,6 +31,7 @@ TAG_TEMPLATE=$(config release.tag_template)
 CURRENT_CMD=$(config release.current)
 BUMP_CMD=$(config release.bump)
 FORGE_CMD=$(config tools.forge forge)
+RUNNER=$(config checks.runner just)
 
 MODE=
 VERSION=
@@ -191,12 +192,12 @@ request_description() {
     cat <<EOF
 ## Context
 
-No ticket — release $1, prepared by \`just release\`.
+No ticket — release $1, prepared by \`$RUNNER release\`.
 
 ## Changes
 
 The $1 section of CHANGELOG.md, and the version bump. The section is in the diff; it is not
-copied here, so a rerun of \`just release\` cannot leave this text stale.
+copied here, so a rerun of \`$RUNNER release\` cannot leave this text stale.
 
 ## How it was checked
 

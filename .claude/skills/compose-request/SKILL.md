@@ -42,7 +42,7 @@ git diff "origin/${base}...HEAD" --stat
 Read the diff of anything whose purpose is not obvious from the commit messages. A description
 written from commit subjects alone is a restatement, not an explanation.
 
-The ticket, when there is one, is the GitHub issue in the branch name and the `Refs:` footers.
+The ticket, when there is one, is the one named in the branch and in the `Refs:` footers.
 Its link is the board's `url` joined with its `issue_uri`, `{ticket}` substituted — both under
 `board` in the workflow configuration. No ticket — the description says so, as the template asks.
 
