@@ -209,6 +209,14 @@ EOF
 prepare() {
     prepare_current=$(current_version)
 
+    # git-cliff counts from the newest tag, the version file from itself; they must agree.
+    prepare_latest=$(git tag --list --sort=-v:refname "$(tag_of '*')" | while IFS= read -r t; do
+        version_of "$t" >/dev/null && { printf '%s' "$t"; break; }
+    done)
+    if [ -n "$prepare_latest" ] && [ "$prepare_latest" != "$(tag_of "$prepare_current")" ]; then
+        fail "The version is $prepare_current but the newest tag is $prepare_latest: reconcile them first"
+    fi
+
     [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$RELEASE_BRANCH")" ] ||
         fail "A release is prepared from the tip of origin/$RELEASE_BRANCH: pull or check it out first"
     command -v git-cliff >/dev/null 2>&1 || fail "git-cliff is required: https://git-cliff.org/docs/installation"
