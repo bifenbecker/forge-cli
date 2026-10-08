@@ -21,7 +21,8 @@ project   = "#"
 issue_uri = "/issues/{ticket}"
 
 [tools]
-forge = "sh bin/forge"        # this repository runs its own working tree; elsewhere: "forge"
+required = ["git>=2.38", "just", "jq", "claude", "gh", "shellcheck", "git-cliff", "prek"]
+forge    = "sh bin/forge"        # this repository runs its own working tree; elsewhere: "forge"
 
 [checks]
 # Names of `runner` recipes. pre_push runs from the prek hook.
@@ -30,7 +31,6 @@ static   = ["lint"]
 pre_push = ["lint"]
 
 [ship]
-check          = "just check"
 compose_model  = "sonnet"
 conflict_paths = []            # dirs where two branches each adding a file conflict, e.g. migrations
 
@@ -67,4 +67,4 @@ dir            = ".worktrees"
 link           = []            # paths linked from the main checkout, e.g. [".env", ".venv"]
 install        = ""            # run inside a new worktree, e.g. "just install"; empty: nothing
 max_diff_lines = 600
-diff_paths     = ["bin", "lib", "scripts"]
+diff_paths     = ["bin", "lib"]

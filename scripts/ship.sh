@@ -29,7 +29,6 @@ DELETE_BRANCH=$(config git.delete_branch false)
 MAX_DIFF_LINES=$(config worktree.max_diff_lines)
 REVIEW_MODEL=$(config review.shallow.model)
 DIFF_PATHS=$(config worktree.diff_paths)
-CHECK_CMD=$(config ship.check)
 # Titles and descriptions are written from the diff; the smallest model got the facts wrong there.
 COMPOSE_MODEL=$(config ship.compose_model sonnet)
 CONFLICT_PATHS=$(config ship.conflict_paths '')
@@ -186,8 +185,9 @@ if [ "${changed:-0}" -gt "$MAX_DIFF_LINES" ]; then
     note "Request is $changed lines in $diff_paths_shown against a norm of $MAX_DIFF_LINES — consider splitting it"
 fi
 
-step "Static checks: $CHECK_CMD"
-sh -c "$CHECK_CMD" || fail "Checks failed — fix them before shipping"
+# Same gate as the pre-push hook and CI: the checks [checks].static names.
+step "Static checks"
+sh "$ROOT/scripts/run-checks.sh" static || fail "Checks failed — fix them before shipping"
 
 # The checks change nothing by design; anything left behind would ship unreviewed.
 [ -z "$(git status --porcelain)" ] || fail "Checks modified files — review and commit them, then run ship again"
