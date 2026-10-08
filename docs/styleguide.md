@@ -45,6 +45,13 @@ itself, so a difference between the hosts needs no special case: the function is
 
 Validation lives in `cmd_*`, once for both platforms. Platform functions trust their input.
 
+A new command touches, in one commit: its `help_`/`cmd_` pair; the listing in its parent's
+`help_` text, which the dispatcher does not generate; the platform functions, named after the full
+path (`forge request comment add` calls `forge_call request_comment_add`, defined as
+`github_request_comment_add` and `gitlab_request_comment_add`); the command table in README.md;
+and the skill reference, regenerated with `just docs`. A command one platform cannot do has no
+function there and says so under PLATFORM NOTES.
+
 ## Output
 
 - Text mode (default) prints the platform CLI's own output, or one plain value per line for
@@ -67,7 +74,7 @@ Validation lives in `cmd_*`, once for both platforms. Platform functions trust t
 | 1 | The host or a tool failed | `forge_die`, or the failed command's own code |
 | 2 | Wrong usage | `forge_usage_die`, `forge_unknown_flag`, `forge_unexpected` |
 | 3 | Not supported on this platform | `forge_unsupported`, or no platform function |
-| 4 | Not found | `forge_not_found`, or `forge_capture` seeing "not found" / 404 |
+| 4 | Not found | `forge_not_found`, or `forge_capture` seeing "not found", HTTP 404 or 410 |
 
 An agent branches on these codes, so a failure is never turned into exit 0, and "nothing found" is
 4 rather than empty output.

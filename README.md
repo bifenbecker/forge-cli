@@ -38,7 +38,7 @@ The platform is detected from the git remote. Nothing in the call says which one
 - 🚦 **Exit codes you can branch on** — not found is `4`, unsupported on this platform is `3`
 - 🤖 **Help written for agents** — every command documents its defaults, JSON shape and platform differences
 - 🏠 **Self-hosted GitLab and GitHub Enterprise** — detected from the remote, or set per repository
-- 🐚 **Plain POSIX sh** — runs under dash, ash, busybox and bash; no runtime to install
+- 🐚 **Plain POSIX sh** — runs under dash, ash, busybox and bash, with nothing to build
 
 ## 📦 Install
 
@@ -68,8 +68,8 @@ forge self uninstall     # or: install.sh --uninstall
 |---|---|
 | `sh`, `git` | forge itself, and reading the remote |
 | [`jq`](https://jqlang.org) | every JSON answer is shaped with it |
-| [`gh`](https://cli.github.com) | for GitHub repositories, logged in with `gh auth login` |
-| [`glab`](https://gitlab.com/gitlab-org/cli) | for GitLab repositories, logged in with `glab auth login` |
+| [`gh`](https://cli.github.com) | for GitHub repositories, logged in with `gh auth login` (Enterprise: `gh auth login --hostname <host>`) |
+| [`glab`](https://gitlab.com/gitlab-org/cli) | for GitLab repositories, logged in with `glab auth login` (self-hosted: `glab auth login --hostname gitlab.example.com`) |
 
 `forge doctor` checks all of them, the detected repository and the login.
 
@@ -78,8 +78,9 @@ forge self uninstall     # or: install.sh --uninstall
 ```sh
 cd your-repository
 forge doctor                                   # tools, platform, login
+git push -u origin HEAD                        # forge opens requests from pushed branches
 forge request create --title "feat: login" --body-file body.md --draft
-forge request checks --watch                   # wait for CI, exit 1 if it failed
+forge request checks --watch                   # wait for the request's CI; exit 1 unless it succeeded
 forge request view --jq '{state, mergeable, approved}'
 forge request merge --squash --delete-branch
 ```
@@ -141,12 +142,21 @@ Without `--json`, forge prints the platform CLI's own human output.
 
 ## 🔎 Platform detection
 
-forge reads the `origin` remote and decides in this order:
+forge reads the `origin` remote. The host comes from its URL, or from `git config forge.host`
+(or `FORGE_HOSTNAME`) when the URL uses an ssh alias. The platform is then decided in this order:
 
 1. `FORGE_PLATFORM=github|gitlab`
 2. `git config forge.platform gitlab`
 3. the host: `github.com`, `gitlab.com`, `gitlab.*`
 4. which of `gh` / `glab` is logged in to that host
+
+The settings are plain `git config` keys, so they are per repository unless set with `--global`.
+A self-hosted GitLab behind an ssh alias needs both:
+
+```sh
+git config forge.host gitlab.acme.io     # the real host behind git@acme:team/app.git
+git config forge.platform gitlab         # its name does not say GitLab
+```
 
 | Setting | Use it when |
 |---|---|
@@ -175,8 +185,12 @@ how to read its help and JSON, and which decisions to leave to the user. Install
 npx skills add bifenbecker/forge-cli --skill forge -g -a claude-code
 ```
 
-`-a` takes any agent the CLI supports (`codex`, `cursor`, `gemini-cli`, …), or drop it to be
-asked. To install by hand, copy `skills/forge` into `~/.claude/skills/forge`.
+This needs Node.js for `npx`; the skill itself needs forge installed. `-g` installs it for your
+user rather than one project. Repeat `-a` for several agents (`-a claude-code -a codex`), or drop
+it to be asked; the CLI supports `cursor`, `gemini-cli` and others too.
+
+To install by hand, copy `skills/forge` into the agent's skills directory:
+`~/.claude/skills/forge` for Claude Code, `~/.codex/skills/forge` for Codex.
 
 ## 🛠️ Contributing
 
