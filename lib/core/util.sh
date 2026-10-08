@@ -80,7 +80,7 @@ forge_capture() {
         rm -f "$forge_capture_err"
         return "$FORGE_EXIT_ERROR"
     fi
-    if grep -qiE 'not found|404|could not resolve to|no .* found|does not exist' "$forge_capture_err"; then
+    if grep -qiE 'not found|HTTP 404|404 Not Found|HTTP 410|410 Gone|could not resolve to|no .* found|does not exist' "$forge_capture_err"; then
         rm -f "$forge_capture_err"
         return "$FORGE_EXIT_NOT_FOUND"
     fi
