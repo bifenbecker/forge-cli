@@ -1,20 +1,21 @@
 #!/bin/sh
-# Moves the release on from where it stands; safe to run again at any point.
+# Releases through a request, the same way on any project: everything project-specific is read
+# from workflow.toml, so the script is copied between projects unchanged.
 #
 # Usage:
-#   sh scripts/release.sh [VERSION=<tag>]
-#   sh scripts/release.sh PUBLISH_ONLY=1      publish if there is something to publish, else
-#                                           exit 0; never prepares. This is what CI runs.
+#   sh scripts/release.sh prepare [VERSION=<tag>]
+#   sh scripts/release.sh publish
 #
-#   The version on HEAD was set by a release commit,     tag that commit and publish the
-#   and has no tag or no platform release yet             release from its CHANGELOG section
-#   Otherwise                                            prepare the next release: branch
-#                                                        release/<tag> with the changelog and
-#                                                        the VERSION file, pushed, request
-#                                                        opened or updated
+#   prepare   from the tip of the default branch: bump the version, regenerate CHANGELOG.md,
+#             commit "chore(release): <tag>" on release/<tag>, push, open or update the request.
+#             VERSION overrides the version git-cliff works out from the commits.
+#   publish   after that request is merged: tag the release commit and publish the platform
+#             release from its CHANGELOG section. Exits 0 with nothing to do when HEAD carries
+#             no unpublished release, so CI can run it on every merge.
 #
-#   VERSION is the tag to prepare, shaped as release.tag_template in workflow.toml. Worked out
-#   from the commits since the last tag by default; that needs a semantic version.
+# workflow.toml keys: git.default_branch, release.tag_template, release.version_pattern,
+# release.current (prints the version), release.bump (sets it; {version} is substituted),
+# tools.forge (the forge command).
 
 set -eu
 
@@ -24,16 +25,15 @@ config() {
     sh "$ROOT/scripts/workflow.sh" get "$@"
 }
 
-forge() {
-    sh "$ROOT/bin/forge" "$@"
-}
-
 RELEASE_BRANCH=$(config git.default_branch)
 VERSION_PATTERN=$(config release.version_pattern)
 TAG_TEMPLATE=$(config release.tag_template)
+CURRENT_CMD=$(config release.current)
+BUMP_CMD=$(config release.bump)
+FORGE_CMD=$(config tools.forge forge)
 
+MODE=
 VERSION=
-PUBLISH_ONLY=
 TEMP_FILE=
 RETURN_TO=
 
@@ -43,12 +43,19 @@ usage() {
 
 for arg in "$@"; do
     case $arg in
+        prepare | publish) MODE=$arg ;;
         VERSION=*) VERSION=${arg#VERSION=} ;;
-        PUBLISH_ONLY=*) PUBLISH_ONLY=${arg#PUBLISH_ONLY=} ;;
         -h | --help | help) usage; exit 0 ;;
         *) usage >&2; exit 2 ;;
     esac
 done
+[ -n "$MODE" ] || { usage >&2; exit 2; }
+[ "$MODE" = prepare ] || [ -z "$VERSION" ] || { echo "VERSION= only applies to prepare" >&2; exit 2; }
+
+forge() {
+    # shellcheck disable=SC2086 # tools.forge may be a command with arguments, e.g. "sh bin/forge"
+    $FORGE_CMD "$@"
+}
 
 step() {
     printf '\n\033[0;36m==>\033[0m %s\n' "$1"
@@ -87,12 +94,10 @@ version_of() {
     printf '%s' "$version_of_v"
 }
 
-version_at() {
-    git show "$1:VERSION" 2>/dev/null | tr -d '\r\n'
-}
-
-regex_literal() {
-    printf '%s' "$1" | sed 's/[][\.^$*+?(){}|/]/\\&/g'
+current_version() {
+    current_v=$(sh -c "$CURRENT_CMD" | tr -d '\r\n') || fail "release.current failed: $CURRENT_CMD"
+    [ -n "$current_v" ] || fail "release.current printed nothing: $CURRENT_CMD"
+    printf '%s' "$current_v"
 }
 
 # ls-remote --exit-code answers 2 for a missing ref; any other failure says nothing about the tag.
@@ -104,13 +109,6 @@ remote_tag_exists() {
         2) return 1 ;;
         *) fail "Cannot reach origin to check tag $1" ;;
     esac
-}
-
-is_release_commit() {
-    case $(git log -1 --format=%s "$1") in
-        "chore(release): $2" | "chore(release): $2 ("*) return 0 ;;
-    esac
-    return 1
 }
 
 release_exists() {
@@ -142,10 +140,28 @@ short() {
     printf '%s' "$1" | cut -c1-12
 }
 
+preflight() {
+    step "Preflight"
+    [ -z "$(git status --porcelain)" ] || fail "Working tree is dirty — commit or stash first"
+    git fetch --quiet --tags --force origin "$RELEASE_BRANCH" || fail "Cannot reach origin"
+    git merge-base --is-ancestor HEAD "origin/$RELEASE_BRANCH" ||
+        fail "Releases run from $RELEASE_BRANCH: HEAD is not on origin/$RELEASE_BRANCH"
+}
+
 publish() {
-    publish_version=$1
+    publish_version=$(current_version)
     publish_tag=$(tag_of "$publish_version")
-    publish_commit=$2
+
+    # The squash keeps the request title, so the release commit is found by its subject.
+    publish_commit=$(git log -1 --format=%H -E --grep="^chore\(release\): $(printf '%s' "$publish_tag" | sed 's/[][\.^$*+?(){}|/]/\\&/g')( \(|$)" HEAD)
+    if [ -z "$publish_commit" ]; then
+        echo "Nothing to publish: no \"chore(release): $publish_tag\" commit on HEAD"
+        return
+    fi
+    if remote_tag_exists "$publish_tag" && release_exists "$publish_tag"; then
+        echo "Nothing to publish: $publish_tag is already released"
+        return
+    fi
 
     TEMP_FILE=$(mktemp)
     git show "$publish_commit:CHANGELOG.md" | changelog_section "$publish_version" >"$TEMP_FILE"
@@ -177,8 +193,8 @@ No ticket — release $1, prepared by \`just release\`.
 
 ## Changes
 
-The $1 section of CHANGELOG.md, and the version in VERSION. The section is in the diff; it is
-not copied here, so a rerun of \`just release\` cannot leave this text stale.
+The $1 section of CHANGELOG.md, and the version bump. The section is in the diff; it is not
+copied here, so a rerun of \`just release\` cannot leave this text stale.
 
 ## How it was checked
 
@@ -191,7 +207,7 @@ EOF
 }
 
 prepare() {
-    prepare_current=$1
+    prepare_current=$(current_version)
 
     [ "$(git rev-parse HEAD)" = "$(git rev-parse "origin/$RELEASE_BRANCH")" ] ||
         fail "A release is prepared from the tip of origin/$RELEASE_BRANCH: pull or check it out first"
@@ -233,17 +249,19 @@ prepare() {
     git checkout --quiet -B "$prepare_branch"
 
     step "Changelog"
-    sh "$ROOT/scripts/changelog.sh" TAG="$prepare_tag"
+    git-cliff --tag "$prepare_tag" -o CHANGELOG.md
     TEMP_FILE=$(mktemp)
     changelog_section "$prepare_version" <CHANGELOG.md >"$TEMP_FILE"
     [ -s "$TEMP_FILE" ] ||
         fail "Nothing for $prepare_tag in the changelog: no commit since $(tag_of "$prepare_current") changes the product"
 
     step "Version"
-    printf '%s\n' "$prepare_version" >VERSION
+    sh -c "$(printf '%s' "$BUMP_CMD" | sed "s/{version}/$prepare_version/g")" || fail "release.bump failed"
+    [ "$(current_version)" = "$prepare_version" ] || fail "release.bump did not set the version to $prepare_version"
 
     step "Commit and push"
-    git add CHANGELOG.md VERSION
+    # The tree was clean at preflight, so everything changed now is the release.
+    git add -A
     git commit --quiet -m "chore(release): $prepare_tag"
     git push --quiet --force origin "$prepare_branch"
 
@@ -268,28 +286,5 @@ prepare() {
 }
 
 cd "$(git rev-parse --show-toplevel)"
-
-step "Preflight"
-[ -z "$(git status --porcelain)" ] || fail "Working tree is dirty — commit or stash first"
-git fetch --quiet --tags --force origin "$RELEASE_BRANCH" || fail "Cannot reach origin"
-git merge-base --is-ancestor HEAD "origin/$RELEASE_BRANCH" ||
-    fail "Releases run from $RELEASE_BRANCH: HEAD is not on origin/$RELEASE_BRANCH"
-
-current=$(version_at HEAD)
-[ -n "$current" ] || fail "No VERSION file on HEAD"
-current_tag=$(tag_of "$current")
-
-# Publish only what a release commit set; any other origin of the version means "prepare".
-setter=$(git log -1 --format=%H -G "^$(regex_literal "$current")\$" HEAD -- VERSION)
-if [ -n "$setter" ] && is_release_commit "$setter" "$current_tag" &&
-    { ! remote_tag_exists "$current_tag" || ! release_exists "$current_tag"; }; then
-    [ -z "$VERSION" ] || fail "$current_tag is not published yet: run without VERSION to publish it, then prepare $VERSION"
-    if remote_tag_exists "$current_tag"; then
-        setter=$(git rev-parse "$current_tag^{commit}")
-    fi
-    publish "$current" "$setter"
-elif [ -n "$PUBLISH_ONLY" ] && [ "$PUBLISH_ONLY" != 0 ]; then
-    echo "Nothing to publish: $current_tag is published, or HEAD carries no release"
-else
-    prepare "$current"
-fi
+preflight
+"$MODE"
