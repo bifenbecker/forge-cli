@@ -48,8 +48,8 @@ Validation lives in `cmd_*`, once for both platforms. Platform functions trust t
 A new command touches, in one commit: its `help_`/`cmd_` pair; the listing in its parent's
 `help_` text, which the dispatcher does not generate; the platform functions, named after the full
 path (`forge request comment add` calls `forge_call request_comment_add`, defined as
-`github_request_comment_add` and `gitlab_request_comment_add`); the command table in README.md;
-and the skill reference, regenerated with `just docs`. A command one platform cannot do has no
+`github_request_comment_add` and `gitlab_request_comment_add`); and the command table in
+README.md. A command one platform cannot do has no
 function there and says so under PLATFORM NOTES.
 
 ## Output

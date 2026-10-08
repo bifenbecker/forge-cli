@@ -1,4 +1,4 @@
-# forge-cli tasks. `just` lists them; every recipe forwards its arguments to the script it runs.
+# forge-cli tasks. Recipes forward their arguments to the script they run.
 
 set shell := ["sh", "-cu"]
 set positional-arguments := true
@@ -20,17 +20,17 @@ check:
 ship *args:
     sh scripts/ship.sh "$@"
 
-# Rebuild CHANGELOG.md from the commit history. Usage: just changelog [TAG=vX.Y.Z]
-changelog *args:
-    sh scripts/changelog.sh "$@"
+# Rebuild CHANGELOG.md from the commit history. Usage: just changelog [<tag>]
+changelog tag="":
+    git-cliff {{ if tag != "" { "--tag " + tag } else { "" } }} -o CHANGELOG.md
 
-# Prepare the next release, or publish the merged one; safe to rerun. Usage: just release [VERSION=vX.Y.Z]
+# Prepare the next release as a request. Usage: just release [VERSION=vX.Y.Z]
 release *args:
-    sh scripts/release.sh "$@"
+    sh scripts/release.sh prepare "$@"
 
-# Regenerate the command reference of the agent skill from the help texts
-docs:
-    sh scripts/gen-docs.sh
+# Publish the merged release request: tag and platform release; nothing to do is not an error
+release-publish:
+    sh scripts/release.sh publish
 
 # Install the git hooks (prek)
 hooks:

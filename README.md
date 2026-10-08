@@ -116,8 +116,7 @@ Every command takes `--help`. `pr` and `mr` are aliases of `request`.
 | `api` | raw `gh api` / `glab api` call for the detected host |
 | — | `detect` `doctor` `version` `self update` `self uninstall` |
 
-The full reference, generated from `--help`, is in
-[skills/forge/references/commands.md](skills/forge/references/commands.md).
+`forge <group> --help` and `forge <group> <command> --help` give the full reference.
 
 ## 🧾 JSON output
 
@@ -195,13 +194,11 @@ To install by hand, copy `skills/forge` into the agent's skills directory:
 ## 🛠️ Contributing
 
 The rules live in [docs/](docs/index.md): [styleguide](docs/styleguide.md),
-[git flow](docs/git-flow.md), [review](docs/review.md). The recipes, via
-[just](https://github.com/casey/just):
+[git flow](docs/git-flow.md), [review](docs/review.md). `just` lists every recipe; the main ones:
 
 | Recipe | Does |
 |---|---|
 | `just lint` | shellcheck in POSIX mode, and a check that every command's help is complete |
-| `just docs` | regenerates the skill's command reference from `--help` |
 | `just ship` | gates the branch, reviews it, pushes it and opens a draft request |
 | `just release` | prepares the next release as a request; merging it publishes the release |
 

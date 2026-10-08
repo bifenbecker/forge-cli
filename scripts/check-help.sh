@@ -1,11 +1,23 @@
 #!/bin/sh
-# Fails when a command's help lacks a required section or a well-formed NAME line.
+# Fails when a command's help lacks a required section or a well-formed NAME line: the help is
+# the contract an agent reads, and it is written by hand for 100+ commands.
 set -eu
 
 root=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
-. "$root/lib/core/help.sh"
+FORGE_HOME=$root
+for lib in util json detect args help dispatch; do
+    . "$root/lib/core/$lib.sh"
+done
+for file in "$root"/lib/cmd/*.sh; do
+    . "$file"
+done
 
-sh "$root/scripts/forge-commands.sh" --help-text | awk -v sections="$FORGE_HELP_SECTIONS" '
+# One stream through one awk: spawning tools per command is slow on Windows.
+# shellcheck disable=SC2013 # function names hold no spaces
+for node in $(grep -ho '^cmd_[a-z0-9_]*()' "$root"/lib/cmd/*.sh | sed 's/^cmd_//; s/()$//' | sort); do
+    printf '@@ %s\n' "$node"
+    "help_$node"
+done | awk -v sections="$FORGE_HELP_SECTIONS" '
     function check() {
         if (node == "") return
         if (!named) { printf "help_%s: NAME line is missing or not \"  forge <path> - <summary>\"\n", node > "/dev/stderr"; bad = 1 }
