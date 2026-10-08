@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dash
+        run: sudo apt-get install -y --no-install-recommends dash
+      - name: shellcheck
+        run: shellcheck bin/forge install.sh lib/*/*.sh scripts/*.sh
+      - name: Help of every command is complete
+        run: dash scripts/check-help.sh
+      - name: Runs under dash
+        run: |
+          dash bin/forge --help >/dev/null
+          dash bin/forge --version
+          dash bin/forge request view --help >/dev/null
+
+  # A merged release request leaves "chore(release): vX.Y.Z (#N)" on main; tag it and publish.
+  release:
+    needs: lint
+    if: github.event_name == 'push' && startsWith(github.event.head_commit.message, 'chore(release):')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Identify the tagger
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: sh scripts/release.sh
