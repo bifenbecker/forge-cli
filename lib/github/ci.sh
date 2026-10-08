@@ -196,3 +196,7 @@ github_ci_artifact_download() {
     [ -z "$opt_name" ] || set -- "$@" --name "$opt_name"
     forge_capture gh "$@" >&2
 }
+
+github_ci_run_trigger_request() {
+    forge_unsupported "--request (no GitHub API starts a pull_request run: push, mark the request ready, or use 'forge ci run retry <run-id>')"
+}

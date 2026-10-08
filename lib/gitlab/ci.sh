@@ -216,3 +216,14 @@ gitlab_ci_lint() {
     forge_emit_doc "$gl_ci_lint" '{valid, errors: (.errors // []), warnings: (.warnings // [])}'
     printf '%s\n' "$gl_ci_lint" | _jq -e '.valid == true' >/dev/null || return 1
 }
+
+# The merge request endpoint makes a merge_request_event pipeline; POST /pipeline would make a
+# branch pipeline, which merge request rules skip and the request does not count as its own.
+gitlab_ci_run_trigger_request() {
+    gl_ci_mr_run=$(forge_capture gitlab_api -X POST "$FORGE_API/merge_requests/$1/pipelines") || return $?
+    if forge_json_mode; then
+        forge_emit_doc "$gl_ci_mr_run" "$GL_CI_DEF gl_ci_run"
+    else
+        printf '%s\n' "$gl_ci_mr_run" | _jq -r '.id'
+    fi
+}

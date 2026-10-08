@@ -474,16 +474,21 @@ NAME
 
 USAGE
   forge ci run trigger [--ref <branch>] [--workflow <file|name>] [--input <key=value>]...
+  forge ci run trigger --request <id>
 
 DESCRIPTION
   Starts a run on a branch or tag and prints its id, ready for 'forge ci run watch'.
   The ref must exist on the host: push the branch first.
+  With --request, starts the run of a request instead: the one the request counts as its own
+  (a merge request pipeline on GitLab). A run on the request's branch is not that run.
 
 FLAGS
   --ref <branch>             Branch or tag (default: the current branch; with a detached
                              HEAD or --repo, the repository's default branch)
   -w, --workflow <name>      Workflow file (deploy.yml) or name to run; required on GitHub
   -i, --input <key=value>    Input of the run; repeat for several (see PLATFORM NOTES)
+  --request <id>             Run the pipeline of this request; excludes --ref, --workflow
+                             and --input
 
 OUTPUT
   Text: the new run id.
@@ -495,20 +500,25 @@ PLATFORM NOTES
           If gh does not report the new run, a warning is printed and the output is empty.
   GitLab: creates a pipeline; each --input becomes a CI/CD variable (not a spec:inputs
           input). --workflow exits 3.
+  --request: GitLab creates a merge request pipeline (source merge_request_event). GitHub
+          exits 3: no API creates a pull_request run; such runs start on push and on
+          ready_for_review, and 'forge ci run retry <run-id>' repeats one.
 
 EXAMPLES
   forge ci run trigger --workflow deploy.yml --ref main --input environment=staging
   forge ci run trigger --input DEPLOY=1 --json
   id=\$(forge ci run trigger --workflow test.yml) && forge ci run watch "\$id"
+  forge ci run trigger --request 42
 EOF
 }
 
 cmd_ci_run_trigger() {
-    opt_ref='' opt_workflow='' opt_inputs=''
+    opt_ref='' opt_workflow='' opt_inputs='' opt_request=''
     while [ $# -gt 0 ]; do
         case $1 in
             --ref) forge_arg "$@"; opt_ref=$2; shift 2 ;;
             -w | --workflow) forge_arg "$@"; opt_workflow=$2; shift 2 ;;
+            --request) forge_arg "$@"; opt_request=$2; shift 2 ;;
             -i | --input)
                 forge_arg "$@"
                 case $2 in
@@ -522,6 +532,14 @@ cmd_ci_run_trigger() {
             *) forge_unexpected "$1" ;;
         esac
     done
+    if [ -n "$opt_request" ]; then
+        forge_require_int --request "$opt_request"
+        # The request fixes the ref, and its pipeline endpoint takes no variables.
+        [ -z "$opt_ref$opt_workflow$opt_inputs" ] ||
+            forge_usage_die "--request cannot be combined with --ref, --workflow or --input"
+        forge_call ci_run_trigger_request "$opt_request"
+        return
+    fi
     # The current branch means something only for the checkout's own repository.
     [ -n "$opt_ref" ] || [ -n "$FORGE_REPO_FLAG" ] || opt_ref=$(forge_current_branch)
     ci_trigger_id=$(forge_call ci_run_trigger) || exit $?
